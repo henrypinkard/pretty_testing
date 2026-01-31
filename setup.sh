@@ -4,7 +4,7 @@
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 2. Make binaries executable
-chmod +x "$KIT_ROOT/bin/"*
+chmod +x "$KIT_ROOT/w"
 
 # 3. Detect which shell config file to use (Zsh vs Bash)
 if [ -f "$HOME/.zshrc" ]; then
@@ -18,15 +18,15 @@ fi
 echo "Configuring aliases in $SHELL_CONFIG..."
 
 if ! grep -q "alias t=" "$SHELL_CONFIG"; then
-    echo "alias t='$KIT_ROOT/bin/t'" >> "$SHELL_CONFIG"
+    echo "alias t='$KIT_ROOT/t'" >> "$SHELL_CONFIG"
 fi
 
 if ! grep -q "alias w=" "$SHELL_CONFIG"; then
-    echo "alias w='$KIT_ROOT/bin/w'" >> "$SHELL_CONFIG"
+    echo "alias w='$KIT_ROOT/w'" >> "$SHELL_CONFIG"
 fi
 
 if ! grep -q "alias da=" "$SHELL_CONFIG"; then
-    echo "alias da='$KIT_ROOT/bin/da'" >> "$SHELL_CONFIG"
+    echo "alias da='$KIT_ROOT/da'" >> "$SHELL_CONFIG"
 fi
 
 # Note: We added $KIT_ROOT to the path so python finds the file regardless of where you are
@@ -35,9 +35,9 @@ if ! grep -q "alias d=" "$SHELL_CONFIG"; then
 fi
 
 # 5. Also set them for the CURRENT session so they work right now
-alias t="$KIT_ROOT/bin/t"
-alias w="$KIT_ROOT/bin/w"
-alias da="$KIT_ROOT/bin/da"
+alias t="$KIT_ROOT/t"
+alias w="$KIT_ROOT/w"
+alias da="$KIT_ROOT/da"
 alias d="python3 -m IPython --pdb $KIT_ROOT/custom/my_test.py"
 
 echo "Debug Kit Loaded!"

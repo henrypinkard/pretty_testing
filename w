@@ -1,7 +1,7 @@
 #!/bin/bash
 # debug_kit/bin/w
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILDER="$REPO_ROOT/src/builder.py"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILDER="$REPO_ROOT/builder.py"
 mkdir -p custom
 
 # --- 1. SETUP SAFE BUILDER ---
