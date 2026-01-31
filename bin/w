@@ -332,4 +332,53 @@ print(''.join(buf_trace))
 # --- 5. UI UPDATE ---
 draw_screen() {
     # NUCLEAR CLEAR (Wipes everything + Scrollback)
-    printf '\033[2J\0
+    printf '\033[2J\033[3J\033[H'
+    
+    if [ "$is_syntax_error" = true ]; then
+        # --- MODE 1: SYNTAX ERROR ---
+        echo "${bold}Last Run: $(date +"%H:%M:%S")${reset}"
+        echo ""
+        echo "${bold}${red}==========================================${reset}"
+        echo "${bold}${red}           COMPILATION ERROR              ${reset}"
+        echo "${bold}${red}==========================================${reset}"
+        echo ""
+        echo "$current_syntax_error"
+        
+    elif [ -n "$current_runtime_error" ]; then
+        # --- MODE 2: RUNTIME ERROR (CRASH) ---
+        echo "${bold}Last Run: $(date +"%H:%M:%S")${reset}"
+        echo ""
+        echo "${bold}${red}==========================================${reset}"
+        echo "${bold}${red}            EXECUTION ERROR               ${reset}"
+        echo "${bold}${red}==========================================${reset}"
+        echo ""
+        echo -e "$current_runtime_error"
+        
+    else
+        # --- MODE 3: DASHBOARD ---
+        echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+        echo -e "$last_valid_buffer"
+        if [ -n "$last_valid_detail" ]; then echo -e "$last_valid_detail"; fi
+    fi
+}
+
+# --- 6. MAIN LOOP ---
+# INITIAL NUCLEAR CLEAR
+printf '\033[2J\033[3J\033[H'
+echo "${bold}Starting Test Monitor...${reset}"
+run_tests
+draw_screen
+
+last_checksum=""
+while true; do
+    # CHANGED: Ensure checksum watches ALL py files
+    current_checksum=$(find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec stat -c %Y {} + 2>/dev/null | md5sum)
+    if [ "$current_checksum" != "$last_checksum" ]; then
+        if [ -n "$last_checksum" ]; then
+            run_tests
+            draw_screen
+        fi
+        last_checksum="$current_checksum"
+    fi
+    sleep 1
+done
