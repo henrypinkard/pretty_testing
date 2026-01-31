@@ -36,7 +36,8 @@ run_tests() {
     current_runtime_error=""
     
     # A. SELECT SOURCE
-    if [ -d "custom_tests" ] && ls custom_tests/level_*_tests.py >/dev/null 2>&1; then
+    # CHANGED: Look for *.py instead of level_*_tests.py
+    if [ -d "custom_tests" ] && ls custom_tests/*.py >/dev/null 2>&1; then
         test_source_dir="custom_tests"
         display_source="CUSTOM TESTS ($test_source_dir)"
     else
@@ -45,7 +46,8 @@ run_tests() {
     fi
 
     # B. VALIDATE SOURCE (Fail Fast - Syntax Only)
-    files_to_check=$(find . -maxdepth 1 -name "*.py" -type f; find "$test_source_dir" -name "level_*_tests.py" -type f)
+    # CHANGED: Look for *.py
+    files_to_check=$(find . -maxdepth 1 -name "*.py" -type f; find "$test_source_dir" -name "*.py" -type f)
     syntax_output=$(python3 -m py_compile $files_to_check 2>&1)
     
     if [ $? -ne 0 ]; then
@@ -55,8 +57,9 @@ run_tests() {
     fi
 
     # C. GENERATE RUNNERS
-    rm -f custom/watch_level*.py
-    for f in "$test_source_dir"/level_*_tests.py; do 
+    # CHANGED: Remove generic watch files and loop over generic inputs
+    rm -f custom/watch_*.py
+    for f in "$test_source_dir"/*.py; do 
         [ -f "$f" ] || continue
         python3 custom/make_watch_test.py "$f" > /dev/null 2>&1
     done
@@ -67,12 +70,13 @@ run_tests() {
     last_run_time=$(date +"%H:%M:%S")
     new_buffer=""
     first_fail_method=""
-    first_fail_level=""
     
     # E. RUN SWEEP
-    for watch_file in $(ls custom/watch_level*.py 2>/dev/null | sort -V); do
-        level=$(echo "$watch_file" | grep -oP 'watch_level\K\d+')
-        new_buffer+=$'\n'"${bold}Level ${level}:${reset}"$'\n'
+    # CHANGED: Look for any watch_*.py file
+    for watch_file in $(ls custom/watch_*.py 2>/dev/null | sort -V); do
+        # CHANGED: Use filename as label instead of extracting number
+        file_label=$(basename "$watch_file" .py | sed 's/watch_//')
+        new_buffer+=$'\n'"${bold}File: ${file_label}${reset}"$'\n'
         
         has_tests_in_level=false
         
@@ -91,7 +95,6 @@ run_tests() {
                  has_tests_in_level=true
                  if [ -z "$first_fail_method" ]; then
                      first_fail_method="$test_name"
-                     first_fail_level="$level"
                  fi
              elif [[ "$line" == "NO_TESTS_FOUND_IN_FILE" ]]; then
                  new_buffer+="  [${yellow}WARNING${reset}] No methods starting with 'test_' found.$'\n'"
@@ -104,22 +107,13 @@ run_tests() {
                  # PROCESS & COLORIZE THE CRASH
                  current_runtime_error=$(echo "$raw_output" | python3 -c "
 import sys, re
-
 full_log = sys.stdin.read()
 lines = full_log.splitlines()
-
-# 1. FIND THE LAST FRAME (Bottom level function)
 last_frame_start = -1
 for i, line in enumerate(lines):
     if line.strip().startswith('File \"'):
         last_frame_start = i
-
-if last_frame_start != -1:
-    crash_lines = lines[last_frame_start:]
-else:
-    crash_lines = lines
-
-# 2. COLORIZER FUNCTION (Crash View)
+crash_lines = lines[last_frame_start:] if last_frame_start != -1 else lines
 def colorize(text_lines):
     out = []
     for line in text_lines:
@@ -128,18 +122,14 @@ def colorize(text_lines):
             prefix, path, mid1, lineno, mid2, method = match.groups()
             out.append(f'  {prefix}\033[34m{path}\033[0m{mid1}\033[32m{lineno}\033[0m{mid2}\033[33m{method}\033[0m')
             continue
-        
         if 'Error:' in line or 'Exception:' in line:
             out.append(f'\033[31m{line}\033[0m') 
             continue
-            
-        if line.startswith('    '):
+        if '    ' in line:
              out.append(f'\033[1m{line}\033[0m') 
              continue
-             
         out.append(line)
     return out
-
 colored_lines = colorize(crash_lines)
 print('\n'.join(colored_lines))
 ")
@@ -151,16 +141,20 @@ print('\n'.join(colored_lines))
     # F. DEEP DIVE (Only if valid failure found)
     new_detail=""
     if [ -n "$first_fail_method" ]; then
-        orig_file="${test_source_dir}/level_${first_fail_level}_tests.py"
-        python3 "$BUILDER" "$orig_file" "$first_fail_method" > /dev/null 2>&1
+        # CHANGED: Robust lookup. Find the file that contains the failing method.
+        # This avoids all file-naming guesswork.
+        orig_file=$(grep -l "def $first_fail_method" "$test_source_dir"/*.py | head -n 1)
         
-        # 1. GET FAIL LINE
-        err_out=$(python3 custom/my_test.py 2>&1)
-        fail_line=$(echo "$err_out" | grep -P "File \".*custom/my_test.py\", line \d+, in $first_fail_method" | tail -n 1 | grep -oP 'line \K\d+')
-        if [ -z "$fail_line" ]; then fail_line=0; fi
+        if [ -n "$orig_file" ]; then
+            python3 "$BUILDER" "$orig_file" "$first_fail_method" > /dev/null 2>&1
+            
+            # 1. GET FAIL LINE
+            err_out=$(python3 custom/my_test.py 2>&1)
+            fail_line=$(echo "$err_out" | grep -P "File \".*custom/my_test.py\", line \d+, in $first_fail_method" | tail -n 1 | grep -oP 'line \K\d+')
+            if [ -z "$fail_line" ]; then fail_line=0; fi
 
-        # 2. EXTRACT SOURCE
-        source_code=$(python3 -c "
+            # 2. EXTRACT SOURCE
+            source_code=$(python3 -c "
 import ast, re, os, sys
 os.environ['TERM'] = 'xterm-256color'
 try:
@@ -211,12 +205,12 @@ try:
 except Exception as e:
     print(f'Error extracting source: {e}')
 ")
-        
-        # 3. RUN TRACEBACK
-        raw_trace=$(python3 custom/my_test.py 2>&1)
-        
-        # 4. PARSE LOGS & COLORIZE EXECUTION
-        parsed_sections=$(echo "$raw_trace" | python3 -c "
+            
+            # 3. RUN TRACEBACK
+            raw_trace=$(python3 custom/my_test.py 2>&1)
+            
+            # 4. PARSE LOGS & COLORIZE EXECUTION
+            parsed_sections=$(echo "$raw_trace" | python3 -c "
 import sys, re
 try:
     from pygments import highlight
@@ -232,24 +226,16 @@ buf_trace = []
 frame_buffer = []
 failure_summary = []
 
-# --- COLORIZER (WITH FALLBACK) ---
 def colorize_code(code_str):
-    # 1. Try Pygments
     if has_pygments:
         try:
             return highlight(code_str, PythonLexer(), TerminalFormatter()).rstrip()
         except:
             pass
-            
-    # 2. Manual Fallback (Regex)
-    # Strings (Green)
     code_str = re.sub(r'(\".*?\"|\'.*?\')', r'\033[32m\1\033[0m', code_str)
-    # Numbers (Cyan)
     code_str = re.sub(r'\b(\d+)\b', r'\033[36m\1\033[0m', code_str)
-    # Keywords (Yellow)
     keywords = r'\b(def|class|return|if|else|elif|while|for|in|try|except|import|from|as|pass|None|True|False)\b'
     code_str = re.sub(keywords, r'\033[33m\1\033[0m', code_str)
-    # Self (Magenta)
     code_str = re.sub(r'\b(self)\b', r'\033[35m\1\033[0m', code_str)
     return code_str
 
@@ -285,14 +271,12 @@ for line in sys.stdin:
         if clean.startswith('[EXE] '):
             code = clean.replace('[EXE] ', '')
             colored_code = colorize_code(code)
-            # Make the '>>' marker bold blue to stand out
             buf_log.append(f'  \033[1;34m>>\033[0m {colored_code}\n')
         else:
             if 'Traceback (most recent call last)' in clean:
                  state = 3
                  buf_trace.append(f'\033[1;31m{line}\033[0m')
             else:
-                # Normal print output (dim white)
                 buf_log.append(f'  \033[2m{line}\033[0m')
     elif state == 3 or state == 0:
         if line.lstrip().startswith('File '):
@@ -315,27 +299,30 @@ print(''.join(buf_log))
 print('___SECTION_SEP___')
 print(''.join(buf_trace))
 ")
-        error_msg=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==2')
-        exec_log=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==3')
-        traceback=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==4')
+            error_msg=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==2')
+            exec_log=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==3')
+            traceback=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==4')
 
-        if [ -n "$error_msg" ]; then
+            if [ -n "$error_msg" ]; then
+                new_detail+=$'\n'"${bold}==========================================${reset}"$'\n'
+                new_detail+="${bold}${red}FAILURE SUMMARY:${reset}"$'\n'
+                new_detail+="  ${bold}${red}$error_msg${reset}"
+            fi
+
             new_detail+=$'\n'"${bold}==========================================${reset}"$'\n'
-            new_detail+="${bold}${red}FAILURE SUMMARY:${reset}"$'\n'
-            new_detail+="  ${bold}${red}$error_msg${reset}"
+            new_detail+="${bold}FAILING METHOD SOURCE:${reset}"$'\n'
+            new_detail+="$source_code"
+            
+            new_detail+=$'\n'"${bold}------------------------------------------${reset}"$'\n'
+            new_detail+="${bold}CLEAN TRACEBACK:${reset}"$'\n'
+            new_detail+="$traceback"
+            
+            new_detail+=$'\n'"${bold}------------------------------------------${reset}"$'\n'
+            new_detail+="${bold}INTERACTIVE EXECUTION LOG:${reset}"$'\n'
+            new_detail+="$exec_log"
+        else
+            new_detail+=$'\n'"${yellow}Could not locate source file containing '$first_fail_method'${reset}"
         fi
-
-        new_detail+=$'\n'"${bold}==========================================${reset}"$'\n'
-        new_detail+="${bold}FAILING METHOD SOURCE:${reset}"$'\n'
-        new_detail+="$source_code"
-        
-        new_detail+=$'\n'"${bold}------------------------------------------${reset}"$'\n'
-        new_detail+="${bold}CLEAN TRACEBACK:${reset}"$'\n'
-        new_detail+="$traceback"
-        
-        new_detail+=$'\n'"${bold}------------------------------------------${reset}"$'\n'
-        new_detail+="${bold}INTERACTIVE EXECUTION LOG:${reset}"$'\n'
-        new_detail+="$exec_log"
     fi
 
     last_valid_buffer="$new_buffer"
@@ -345,52 +332,4 @@ print(''.join(buf_trace))
 # --- 5. UI UPDATE ---
 draw_screen() {
     # NUCLEAR CLEAR (Wipes everything + Scrollback)
-    printf '\033[2J\033[3J\033[H'
-    
-    if [ "$is_syntax_error" = true ]; then
-        # --- MODE 1: SYNTAX ERROR ---
-        echo "${bold}Last Run: $(date +"%H:%M:%S")${reset}"
-        echo ""
-        echo "${bold}${red}==========================================${reset}"
-        echo "${bold}${red}           COMPILATION ERROR              ${reset}"
-        echo "${bold}${red}==========================================${reset}"
-        echo ""
-        echo "$current_syntax_error"
-        
-    elif [ -n "$current_runtime_error" ]; then
-        # --- MODE 2: RUNTIME ERROR (CRASH) ---
-        echo "${bold}Last Run: $(date +"%H:%M:%S")${reset}"
-        echo ""
-        echo "${bold}${red}==========================================${reset}"
-        echo "${bold}${red}           EXECUTION ERROR                ${reset}"
-        echo "${bold}${red}==========================================${reset}"
-        echo ""
-        echo -e "$current_runtime_error"
-        
-    else
-        # --- MODE 3: DASHBOARD ---
-        echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
-        echo -e "$last_valid_buffer"
-        if [ -n "$last_valid_detail" ]; then echo -e "$last_valid_detail"; fi
-    fi
-}
-
-# --- 6. MAIN LOOP ---
-# INITIAL NUCLEAR CLEAR
-printf '\033[2J\033[3J\033[H'
-echo "${bold}Starting Test Monitor...${reset}"
-run_tests
-draw_screen
-
-last_checksum=""
-while true; do
-    current_checksum=$(find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec stat -c %Y {} + 2>/dev/null | md5sum)
-    if [ "$current_checksum" != "$last_checksum" ]; then
-        if [ -n "$last_checksum" ]; then
-            run_tests
-            draw_screen
-        fi
-        last_checksum="$current_checksum"
-    fi
-    sleep 1
-done
+    printf '\033[2J\0
