@@ -210,9 +210,8 @@ def main():
         only_test_method = sys.argv[2]
     else:
         base = os.path.basename(test_file)
-        match = re.search(r'level_(\d+)_tests\.py', base)
-        level = match.group(1) if match else "0"
-        dest_file = os.path.join("custom", f"my_level{level}.py")
+        stem = os.path.splitext(base)[0]
+        dest_file = os.path.join("custom", f"my_{stem}.py")
         only_test_method = None
 
     generate_standalone_test(test_file, dest_file, only_test_method)

@@ -5,12 +5,10 @@ BUILDER="$REPO_ROOT/builder.py"
 mkdir -p custom
 
 # --- 1. SETUP SAFE BUILDER ---
-if [ ! -f custom/make_watch_test.py ]; then
-    cat "$BUILDER" \
-      | sed "s/my_level/watch_level/g" \
-      | sed "s/raise e/pass/g" \
-      > custom/make_watch_test.py
-fi
+cat "$BUILDER" \
+  | sed "s/my_/watch_/g" \
+  | sed "s/raise e/pass/g" \
+  > custom/make_watch_test.py
 
 # --- 2. COLORS ---
 green=$(tput setaf 2)
