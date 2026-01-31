@@ -306,7 +306,37 @@ print(''.join(buf_trace))
             if [ -n "$error_msg" ]; then
                 new_detail+=$'\n'"${bold}==========================================${reset}"$'\n'
                 new_detail+="${bold}${red}FAILURE SUMMARY:${reset}"$'\n'
-                new_detail+="  ${bold}${red}$error_msg${reset}"
+                colored_summary=$(echo "$error_msg" | python3 -c "
+import sys, re
+for line in sys.stdin:
+    line = line.rstrip()
+    # File reference line
+    m = re.match(r'(File \")(.*?)(\", line )(\d+)(.*)', line)
+    if m:
+        print(f'  {m.group(1)}\033[34m{m.group(2)}\033[0m{m.group(3)}\033[32m{m.group(4)}\033[0m{m.group(5)}')
+        continue
+    # Error type header
+    if line.endswith(':') and ('Error' in line or 'Exception' in line):
+        print(f'  \033[1;31m{line}\033[0m')
+        continue
+    # Actual value
+    m2 = re.match(r'(\s*Actual:\s*)(.*)', line)
+    if m2:
+        print(f'  \033[1mActual:   \033[33m{m2.group(2)}\033[0m')
+        continue
+    # Expected value
+    m3 = re.match(r'(\s*Expected:\s*)(.*)', line)
+    if m3:
+        print(f'  \033[1mExpected: \033[32m{m3.group(2)}\033[0m')
+        continue
+    # Generic error line (e.g. TypeError: msg)
+    m4 = re.match(r'(\w+(?:Error|Exception)):\s*(.*)', line)
+    if m4:
+        print(f'  \033[1;31m{m4.group(1)}:\033[0m {m4.group(2)}')
+        continue
+    print(f'  {line}')
+")
+                new_detail+="$colored_summary"
             fi
 
             new_detail+=$'\n'"${bold}==========================================${reset}"$'\n'
