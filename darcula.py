@@ -6,7 +6,7 @@ link("focused current breakpoint", "focused current frame name")
 
 palette.update({
     # base styles
-    "background": ("light gray", "black"),
+    "background": ("white", "dark gray"),
     "selectable": ("white", "black"),
     "focused selectable": ("white", "dark gray"),
     "highlighted": ("white", "dark cyan"),
