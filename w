@@ -405,6 +405,12 @@ launch_pudb() {
     if [ -z "$first_fail_method" ] || [ -z "$first_fail_file" ]; then
         return
     fi
+    # Fix theme in pudb config in case it got wiped by prefs save
+    PUDB_CFG="$HOME/.config/pudb/pudb.cfg"
+    if [ -f "$PUDB_CFG" ]; then
+        DARCULA_PATH="$REPO_ROOT/darcula.py"
+        sed -i "s|^theme =.*|theme = $DARCULA_PATH|" "$PUDB_CFG"
+    fi
     # Track which method we're debugging for breakpoint cleanup
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
