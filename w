@@ -365,7 +365,17 @@ draw_screen() {
         echo "${bold}${red}           COMPILATION ERROR              ${reset}"
         echo "${bold}${red}==========================================${reset}"
         echo ""
-        echo "$current_syntax_error"
+        echo "$current_syntax_error" | while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*File ]]; then
+                echo "${blue}${line}${reset}"
+            elif [[ "$line" =~ ^[[:space:]]*\^+ ]] || [[ "$line" =~ ^[[:space:]]*~+\^ ]]; then
+                echo "${yellow}${bold}${line}${reset}"
+            elif [[ "$line" =~ ^SyntaxError ]] || [[ "$line" =~ ^IndentationError ]] || [[ "$line" =~ ^TabError ]]; then
+                echo "${red}${bold}${line}${reset}"
+            else
+                echo "${dim}${line}${reset}"
+            fi
+        done
         
     elif [ -n "$current_runtime_error" ]; then
         # --- MODE 2: RUNTIME ERROR (CRASH) ---
