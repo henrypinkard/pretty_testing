@@ -399,37 +399,41 @@ launch_pudb() {
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
     python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
-    # Prepare debug version: remove timeouts, inject set_trace at start of test method
+    # Prepare debug version: remove timeouts only (no set_trace injection)
     python3 -c "
-import re, ast
+import re
 with open('custom/my_test.py') as f:
     lines = f.readlines()
-# Remove @timeout decorators
 cleaned = [l for l in lines if not re.match(r'\s*@timeout\(', l)]
-# Neuter signal.alarm
 cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleaned]
-# Find the test method, inject set_trace at start + breakpoint at fail line
-import os
-fail_line = $first_fail_line
-removed = sum(1 for l in lines[:max(0,fail_line-1)] if re.match(r'\s*@timeout\(', l))
-adj_fail = fail_line - removed if fail_line > 0 else 0
-source = ''.join(cleaned)
-tree = ast.parse(source)
-my_test_abs = os.path.abspath('custom/my_test.py')
-for node in ast.walk(tree):
-    if isinstance(node, ast.FunctionDef) and node.name == '$first_fail_method':
-        body_line = node.body[0].lineno - 1  # 0-indexed
-        indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
-        inject = ' ' * indent + 'import pudb, sys; pudb.set_trace()\n'
-        if adj_fail > 0:
-            bp_target = adj_fail + 1  # +1 for this inserted line
-            inject += ' ' * indent + 'sys.gettrace().__self__.set_break(\"' + my_test_abs + '\", ' + str(bp_target) + ')\n'
-        cleaned.insert(body_line, inject)
-        break
 with open('custom/my_test.py', 'w') as f:
     f.writelines(cleaned)
 "
-    python3 custom/my_test.py
+    # Compute adjusted fail line for the cleaned file
+    my_test_abs="$(cd custom && pwd)/my_test.py"
+    adj_fail_line=$(python3 -c "
+import re
+with open('custom/my_test.py') as f:
+    orig_lines = f.readlines()
+# Already cleaned, but fail_line was from pre-clean file
+with open('$first_fail_file') as f:
+    src_lines = f.readlines()
+removed = sum(1 for l in src_lines[:max(0,$first_fail_line-1)] if re.match(r'\s*@timeout\(', l))
+print($first_fail_line - removed if $first_fail_line > 0 else 0)
+")
+    # Write launcher: activates PuDB, sets breakpoints, execs the test
+    cat > custom/debug_launcher.py << PYEOF
+import pudb, sys, os
+script = os.path.abspath("custom/my_test.py")
+# Activate PuDB - this pauses at next executable line
+pudb.set_trace()
+# Now debugger is active - set breakpoints via public bdb API
+if $adj_fail_line > 0:
+    sys.gettrace().__self__.set_break(script, $adj_fail_line)
+# Run the actual test
+exec(open(script).read())
+PYEOF
+    python3 custom/debug_launcher.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
     draw_screen
