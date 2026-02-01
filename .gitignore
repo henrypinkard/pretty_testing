@@ -2,3 +2,4 @@ custom/
 __pycache__/
 *.pyc
 .last_fail
+.claude

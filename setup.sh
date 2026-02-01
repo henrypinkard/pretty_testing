@@ -52,6 +52,7 @@ fi
 # We check grep first to ensure we don't add the same alias multiple times
 echo "Configuring aliases in $SHELL_CONFIG..."
 
+export TERM=xterm-256color
 if ! grep -q "TERM=xterm-256color" "$SHELL_CONFIG"; then
     echo "export TERM=xterm-256color" >> "$SHELL_CONFIG"
 fi
