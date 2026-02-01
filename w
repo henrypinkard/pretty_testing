@@ -420,13 +420,11 @@ for node in ast.walk(tree):
     if isinstance(node, ast.FunctionDef) and node.name == '$first_fail_method':
         body_line = node.body[0].lineno - 1  # 0-indexed
         indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
-        cleaned.insert(body_line, ' ' * indent + 'import pudb; pudb.set_trace()\n')
-        # Also inject set_trace at the fail line so 'c' stops there
+        inject = ' ' * indent + 'import pudb, sys; pudb.set_trace()\n'
         if adj_fail > 0:
-            adj_idx = adj_fail  # +1 for inserted line above, -1 for 0-index = net 0
-            if adj_idx < len(cleaned):
-                fi = len(cleaned[adj_idx]) - len(cleaned[adj_idx].lstrip())
-                cleaned.insert(adj_idx, ' ' * fi + 'pudb.set_trace()\n')
+            bp_target = adj_fail + 1  # +1 for this inserted line
+            inject += ' ' * indent + 'sys.gettrace().__self__.set_break(\"' + my_test_abs + '\", ' + str(bp_target) + ')\n'
+        cleaned.insert(body_line, inject)
         break
 with open('custom/my_test.py', 'w') as f:
     f.writelines(cleaned)
