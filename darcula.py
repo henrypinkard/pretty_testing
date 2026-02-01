@@ -22,18 +22,18 @@ link("focused current breakpoint", "focused current frame name")
 
 palette.update({
     # base styles
-    "background": ("h196", "h21"),       # RED on BLUE
-    "selectable": ("h226", bg),           # YELLOW
+    "background": ("h246", "h236"),
+    "selectable": (white, bg),
     "focused selectable": (bright_white, bg_selected),
     "highlighted": (bright_white, teal),
-    "hotkey": ("h201", "h21"),            # MAGENTA on BLUE
+    "hotkey": (add_setting(orange, "underline"), "h236"),
     # general ui
-    "input": ("h46", bg),                 # BRIGHT GREEN
+    "input": (white, bg),
     "button": (add_setting(white, "bold"), bg_lighter),
     "focused button": (add_setting(bright_white, "bold"), bg_selected),
-    "focused sidebar": ("h208", bg_lighter), # ORANGE
+    "focused sidebar": (orange, bg_lighter),
     "warning": (add_setting(bright_white, "bold"), dark_red),
-    "group head": ("h51", "h21"),         # CYAN on BLUE
+    "group head": (add_setting(orange, "bold"), "h236"),
     "dialog title": (add_setting(bright_white, "bold"), bg),
     # source view
     "source": (white, bg),
