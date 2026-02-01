@@ -22,7 +22,7 @@ link("focused current breakpoint", "focused current frame name")
 
 palette.update({
     # base styles
-    "background": ("h246", "h236"),
+    "background": ("h250", "h236"),
     "selectable": (white, bg),
     "focused selectable": (bright_white, bg_selected),
     "highlighted": (bright_white, teal),
