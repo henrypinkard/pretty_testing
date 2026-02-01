@@ -290,7 +290,7 @@ print(''.join(buf_log))
             new_detail+="$source_and_error"
 
             if [ -n "$error_msg" ]; then
-                new_detail+=$'\n'
+                new_detail+=$'\n\n'
                 colored_summary=$(echo "$error_msg" | python3 -c "
 import sys, re
 for line in sys.stdin:
@@ -318,6 +318,7 @@ for line in sys.stdin:
     print(f'  {line}')
 ")
                 new_detail+="$colored_summary"
+                new_detail+=$'\n'
             fi
 
             if [ -n "$exec_log" ]; then
