@@ -399,36 +399,27 @@ launch_pudb() {
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
     python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
-    # Prepare debug version: remove timeout decorators and neuter alarms
+    # Prepare debug version: remove timeouts, inject set_trace at fail line
     python3 -c "
 import re
-with open('custom/my_test.py', 'r') as f:
+with open('custom/my_test.py') as f:
     lines = f.readlines()
+# Remove @timeout decorators
 cleaned = [l for l in lines if not re.match(r'\s*@timeout\(', l)]
+# Neuter signal.alarm
 cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleaned]
+# Compute adjusted fail line
+fail_line = $first_fail_line
+if fail_line > 0:
+    removed = sum(1 for l in lines[:fail_line-1] if re.match(r'\s*@timeout\(', l))
+    adj = fail_line - removed - 1  # 0-indexed
+    if 0 <= adj < len(cleaned):
+        indent = len(cleaned[adj]) - len(cleaned[adj].lstrip())
+        cleaned.insert(adj, ' ' * indent + 'import pudb; pudb.set_trace()\n')
 with open('custom/my_test.py', 'w') as f:
     f.writelines(cleaned)
 "
-    # Compute adjusted fail line and ensure breakpoint exists
-    my_test_abs="$(cd custom && pwd)/my_test.py"
-    if [ "$first_fail_line" -gt 0 ] 2>/dev/null; then
-        # Count @timeout lines removed before fail_line in the generated file
-        adj_fail_line=$(python3 -c "
-import re
-with open('custom/my_test.py') as f:
-    orig = f.readlines()
-removed = sum(1 for i, l in enumerate(orig[:$first_fail_line-1]) if re.match(r'\s*@timeout\(', l))
-print($first_fail_line - removed)
-")
-        mkdir -p "$(dirname "$PUDB_BP_FILE")"
-        # Always ensure the fail-line breakpoint is present
-        bp_entry="b $my_test_abs:$adj_fail_line"
-        if ! grep -qF "$bp_entry" "$PUDB_BP_FILE" 2>/dev/null; then
-            echo "$bp_entry" >> "$PUDB_BP_FILE"
-        fi
-    fi
-    # Launch PuDB — continues until it hits a saved breakpoint
-    python3 -m pudb -c custom/my_test.py
+    python3 custom/my_test.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
     draw_screen
