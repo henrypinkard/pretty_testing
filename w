@@ -443,18 +443,25 @@ launch_pudb() {
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
     python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
-    # Write a breakpoint at the failing line so PuDB stops there (not in unittest internals)
-    my_test_abs="$(cd "$(dirname "custom/my_test.py")" && pwd)/my_test.py"
+    # Inject pudb.set_trace() at the failing line so PuDB opens right there
     if [ "$first_fail_line" -gt 0 ] 2>/dev/null; then
-        mkdir -p "$(dirname "$PUDB_BP_FILE")"
-        # Add the breakpoint if not already present
-        bp_entry="b $my_test_abs:$first_fail_line"
-        if ! grep -qF "$bp_entry" "$PUDB_BP_FILE" 2>/dev/null; then
-            echo "$bp_entry" >> "$PUDB_BP_FILE"
-        fi
+        python3 -c "
+line = $first_fail_line
+with open('custom/my_test.py', 'r') as f:
+    lines = f.readlines()
+if line <= len(lines):
+    # Get indentation of the failing line
+    target = lines[line - 1]
+    indent = len(target) - len(target.lstrip())
+    trace_line = ' ' * indent + 'import pudb; pudb.set_trace()  # auto-injected\n'
+    # Insert before the failing line
+    lines.insert(line - 1, trace_line)
+    with open('custom/my_test.py', 'w') as f:
+        f.writelines(lines)
+"
     fi
-    # Launch PuDB — it will stop at saved breakpoints, then run to completion
-    python3 -m pudb -c custom/my_test.py
+    # Launch directly — set_trace() will open PuDB at the failing line
+    python3 custom/my_test.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
     draw_screen
