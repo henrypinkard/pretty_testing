@@ -420,11 +420,12 @@ for node in ast.walk(tree):
         body_line = node.body[0].lineno - 1
         indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
         pad = ' ' * indent
-        # +2 because we insert 2 lines before the original code
-        bp_target = adj_fail + 2 if adj_fail > 0 else 0
-        inject = pad + 'import pudb, sys; pudb.set_trace()\n'
-        if bp_target > 0:
-            inject += pad + 'sys.gettrace().__self__.set_break(\"' + my_test_abs + '\", ' + str(bp_target) + ')\n'
+        if adj_fail > 0:
+            # +1 for the single injected line
+            bp_target = adj_fail + 1
+            inject = pad + 'import pudb; _dbg = pudb._get_debugger(); _dbg.set_break(\"' + my_test_abs + '\", ' + str(bp_target) + '); pudb.set_trace()\n'
+        else:
+            inject = pad + 'import pudb; pudb.set_trace()\n'
         cleaned.insert(body_line, inject)
         break
 with open('custom/my_test.py', 'w') as f:
