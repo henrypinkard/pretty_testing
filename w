@@ -399,31 +399,38 @@ launch_pudb() {
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
     python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
-    # Prepare debug version: remove timeouts, compute adjusted fail line
+    # Prepare debug version: remove timeouts, inject set_trace + set_break at method start
     my_test_abs="$(cd custom && pwd)/my_test.py"
-    adj_fail_line=$(python3 -c "
-import re
+    python3 -c "
+import re, ast, os
 with open('custom/my_test.py') as f:
     lines = f.readlines()
 # Count @timeout lines before fail_line, then remove them
 fail = $first_fail_line
 removed = sum(1 for l in lines[:max(0,fail-1)] if re.match(r'\s*@timeout\(', l))
+adj_fail = fail - removed if fail > 0 else 0
 cleaned = [l for l in lines if not re.match(r'\s*@timeout\(', l)]
 cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleaned]
+# Find test method body and inject set_trace + set_break
+source = ''.join(cleaned)
+tree = ast.parse(source)
+my_test_abs = os.path.abspath('custom/my_test.py')
+for node in ast.walk(tree):
+    if isinstance(node, ast.FunctionDef) and node.name == '$first_fail_method':
+        body_line = node.body[0].lineno - 1
+        indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
+        pad = ' ' * indent
+        # +2 because we insert 2 lines before the original code
+        bp_target = adj_fail + 2 if adj_fail > 0 else 0
+        inject = pad + 'import pudb, sys; pudb.set_trace()\n'
+        if bp_target > 0:
+            inject += pad + 'sys.gettrace().__self__.set_break(\"' + my_test_abs + '\", ' + str(bp_target) + ')\n'
+        cleaned.insert(body_line, inject)
+        break
 with open('custom/my_test.py', 'w') as f:
     f.writelines(cleaned)
-print(fail - removed if fail > 0 else 0)
-")
-    # Launch via inline wrapper: enters PuDB, sets breakpoint at fail line, runs test
-    python3 -c "
-import pudb, sys
-script = '$my_test_abs'
-bp_line = $adj_fail_line
-pudb.set_trace()
-if bp_line > 0:
-    sys.gettrace().__self__.set_break(script, bp_line)
-exec(compile(open(script).read(), script, 'exec'))
 "
+    python3 custom/my_test.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
     draw_screen
