@@ -409,20 +409,22 @@ cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleane
 with open('custom/my_test.py', 'w') as f:
     f.writelines(cleaned)
 "
-    # Compute adjusted fail line (accounting for removed @timeout lines)
+    # Compute adjusted fail line and ensure breakpoint exists
     my_test_abs="$(cd custom && pwd)/my_test.py"
     if [ "$first_fail_line" -gt 0 ] 2>/dev/null; then
+        # Count @timeout lines removed before fail_line in the generated file
         adj_fail_line=$(python3 -c "
 import re
-with open('$first_fail_file') as f:
-    lines = f.readlines()
-removed = sum(1 for l in lines[:$first_fail_line-1] if re.match(r'\s*@timeout\(', l))
+with open('custom/my_test.py') as f:
+    orig = f.readlines()
+removed = sum(1 for i, l in enumerate(orig[:$first_fail_line-1]) if re.match(r'\s*@timeout\(', l))
 print($first_fail_line - removed)
 ")
-        # Add initial breakpoint at fail line if no breakpoints exist yet for this file
         mkdir -p "$(dirname "$PUDB_BP_FILE")"
-        if ! grep -q "$my_test_abs" "$PUDB_BP_FILE" 2>/dev/null; then
-            echo "b $my_test_abs:$adj_fail_line" >> "$PUDB_BP_FILE"
+        # Always ensure the fail-line breakpoint is present
+        bp_entry="b $my_test_abs:$adj_fail_line"
+        if ! grep -qF "$bp_entry" "$PUDB_BP_FILE" 2>/dev/null; then
+            echo "$bp_entry" >> "$PUDB_BP_FILE"
         fi
     fi
     # Launch PuDB — continues until it hits a saved breakpoint
