@@ -6,17 +6,49 @@ KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 2. Install dependencies
 pip3 install pudb > /dev/null 2>&1 || pip install pudb > /dev/null 2>&1
 
-# 3. Make binaries executable
+# 3. Configure PuDB (custom Darcula theme, skip welcome screen)
+PUDB_CONFIG_DIR="$HOME/.config/pudb"
+mkdir -p "$PUDB_CONFIG_DIR"
+if [ ! -f "$PUDB_CONFIG_DIR/pudb.cfg" ]; then
+    cat > "$PUDB_CONFIG_DIR/pudb.cfg" << PUDBCFG
+[pudb]
+breakpoints_weight = 1
+current_stack_frame = bottom
+custom_shell =
+custom_stringifier =
+custom_theme = $KIT_ROOT/darcula.py
+default_variables_access_level = public
+display = auto
+hide_cmdline_win = False
+hotkeys_breakpoints = B
+hotkeys_code = C
+hotkeys_stack = S
+hotkeys_toggle_cmdline_focus = ctrl x
+hotkeys_variables = V
+line_numbers = True
+prompt_on_quit = True
+seen_welcome = e056
+shell = internal
+sidebar_width = 0.5
+stack_weight = 1
+stringifier = default
+theme = custom
+variables_weight = 1
+wrap_variables = True
+PUDBCFG
+fi
+
+# 4. Make binaries executable
 chmod +x "$KIT_ROOT/w"
 
-# 4. Detect which shell config file to use (Zsh vs Bash)
+# 5. Detect which shell config file to use (Zsh vs Bash)
 if [ -f "$HOME/.zshrc" ]; then
     SHELL_CONFIG="$HOME/.zshrc"
 else
     SHELL_CONFIG="$HOME/.bashrc"
 fi
 
-# 5. Append aliases to the config file so they persist after restart
+# 6. Append aliases to the config file so they persist after restart
 # We check grep first to ensure we don't add the same alias multiple times
 echo "Configuring aliases in $SHELL_CONFIG..."
 
@@ -37,7 +69,7 @@ if ! grep -q "alias d=" "$SHELL_CONFIG"; then
     echo "alias d='python3 -m IPython --pdb $KIT_ROOT/custom/my_test.py'" >> "$SHELL_CONFIG"
 fi
 
-# 6. Also set them for the CURRENT session so they work right now
+# 7. Also set them for the CURRENT session so they work right now
 alias t="$KIT_ROOT/t"
 alias w="$KIT_ROOT/w"
 alias da="$KIT_ROOT/da"
