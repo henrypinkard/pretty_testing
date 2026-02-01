@@ -9,7 +9,7 @@ if [ -d "$INSTALL_DIR" ]; then
     git -C "$INSTALL_DIR" pull
 else
     echo "Cloning pretty_testing into current directory..."
-    git clone https://github.com/henrypinkard/pretty_testing.git "$INSTALL_DIR"
+    git clone --depth 1 https://github.com/henrypinkard/pretty_testing.git "$INSTALL_DIR"
 fi
 
 # Run the setup script
