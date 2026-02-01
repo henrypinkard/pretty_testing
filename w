@@ -29,6 +29,7 @@ is_syntax_error=false
 test_source_dir="tests"
 first_fail_file=""
 last_debugged_method=""
+first_fail_line=0
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints"
 
 # --- 4. CORE FUNCTION ---
@@ -165,6 +166,7 @@ print('\n'.join(colored_lines))
             err_out=$(python3 custom/my_test.py 2>&1)
             fail_line=$(echo "$err_out" | grep -P "File \".*custom/my_test.py\", line \d+, in $first_fail_method" | tail -n 1 | grep -oP 'line \K\d+')
             if [ -z "$fail_line" ]; then fail_line=0; fi
+            first_fail_line="$fail_line"
 
             # 2. EXTRACT SOURCE
             source_code=$(python3 -c "
@@ -441,7 +443,17 @@ launch_pudb() {
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
     python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
-    # Launch PuDB with --continue so it runs to the failure point
+    # Write a breakpoint at the failing line so PuDB stops there (not in unittest internals)
+    my_test_abs="$(cd "$(dirname "custom/my_test.py")" && pwd)/my_test.py"
+    if [ "$first_fail_line" -gt 0 ] 2>/dev/null; then
+        mkdir -p "$(dirname "$PUDB_BP_FILE")"
+        # Add the breakpoint if not already present
+        bp_entry="b $my_test_abs:$first_fail_line"
+        if ! grep -qF "$bp_entry" "$PUDB_BP_FILE" 2>/dev/null; then
+            echo "$bp_entry" >> "$PUDB_BP_FILE"
+        fi
+    fi
+    # Launch PuDB — it will stop at saved breakpoints, then run to completion
     python3 -m pudb -c custom/my_test.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
