@@ -30,7 +30,7 @@ test_source_dir="tests"
 first_fail_file=""
 last_debugged_method=""
 first_fail_line=0
-PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints"
+PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 
 # --- 4. CORE FUNCTION ---
 run_tests() {
@@ -199,7 +199,7 @@ try:
     if method_node:
         rel_fail_idx = fail_line_abs - method_node.lineno
         # Only show lines up to and including the failing line
-        end = method_node.lineno + rel_fail_idx + 1 if fail_line_abs > 0 else method_node.end_lineno
+        end = fail_line_abs if fail_line_abs > 0 else method_node.end_lineno
         lines = source.splitlines()[method_node.lineno-1 : end]
         if lines:
             indent_size = len(lines[0]) - len(lines[0].lstrip())
@@ -342,7 +342,7 @@ for line in sys.stdin:
         done
         if [ "$method_still_failing" = false ]; then
             # Method passed — clear breakpoints from the generated debug file
-            sed -i '' "\|custom/my_test.py|d" "$PUDB_BP_FILE" 2>/dev/null
+            grep -v "custom/my_test.py" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
             last_debugged_method=""
         fi
     fi
@@ -399,35 +399,34 @@ launch_pudb() {
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
     python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
-    # Prepare debug version: remove timeout decorator and inject set_trace
+    # Prepare debug version: remove timeout decorators and neuter alarms
     python3 -c "
 import re
 with open('custom/my_test.py', 'r') as f:
     lines = f.readlines()
-
-# Remove @timeout(...) decorator lines
 cleaned = [l for l in lines if not re.match(r'\s*@timeout\(', l)]
-
-# Disable the signal-based timeout code by neutering signal.alarm calls
 cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleaned]
-
-# Inject set_trace at the failing line (adjust for removed lines)
-fail_line = $first_fail_line
-if fail_line > 0:
-    # Recalculate: count how many @timeout lines were before fail_line
-    removed_before = sum(1 for i, l in enumerate(lines[:fail_line-1]) if re.match(r'\s*@timeout\(', l))
-    adj_line = fail_line - removed_before
-    if adj_line <= len(cleaned):
-        target = cleaned[adj_line - 1]
-        indent = len(target) - len(target.lstrip())
-        trace_line = ' ' * indent + 'import pudb; pudb.set_trace()  # auto-injected\n'
-        cleaned.insert(adj_line - 1, trace_line)
-
 with open('custom/my_test.py', 'w') as f:
     f.writelines(cleaned)
 "
-    # Launch directly — set_trace() will open PuDB at the failing line
-    python3 custom/my_test.py
+    # Compute adjusted fail line (accounting for removed @timeout lines)
+    my_test_abs="$(cd custom && pwd)/my_test.py"
+    if [ "$first_fail_line" -gt 0 ] 2>/dev/null; then
+        adj_fail_line=$(python3 -c "
+import re
+with open('$first_fail_file') as f:
+    lines = f.readlines()
+removed = sum(1 for l in lines[:$first_fail_line-1] if re.match(r'\s*@timeout\(', l))
+print($first_fail_line - removed)
+")
+        # Add initial breakpoint at fail line if no breakpoints exist yet for this file
+        mkdir -p "$(dirname "$PUDB_BP_FILE")"
+        if ! grep -q "$my_test_abs" "$PUDB_BP_FILE" 2>/dev/null; then
+            echo "b $my_test_abs:$adj_fail_line" >> "$PUDB_BP_FILE"
+        fi
+    fi
+    # Launch PuDB — continues until it hits a saved breakpoint
+    python3 -m pudb -c custom/my_test.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
     draw_screen
