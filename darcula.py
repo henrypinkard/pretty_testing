@@ -37,8 +37,8 @@ palette.update({
     "dialog title": (add_setting(bright_white, "bold"), bg),
     # source view
     "source": (white, bg),
-    "current source": ("default", "h24"),
-    "breakpoint source": (add_setting(bright_white, "bold"), dark_red),
+    "current source": (bright_white, "h24"),
+    "breakpoint source": (bright_white, "h88"),
     "line number": (gray, bg),
     "current line marker": (add_setting(yellow, "bold"), bg),
     "breakpoint marker": (add_setting(red, "bold"), bg),
