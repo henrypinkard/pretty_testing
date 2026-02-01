@@ -408,15 +408,23 @@ with open('custom/my_test.py') as f:
 cleaned = [l for l in lines if not re.match(r'\s*@timeout\(', l)]
 # Neuter signal.alarm
 cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleaned]
-# Find the test method and inject set_trace at its first line
+# Find the test method, inject set_trace at start + breakpoint at fail line
+import os
+fail_line = $first_fail_line
+removed = sum(1 for l in lines[:max(0,fail_line-1)] if re.match(r'\s*@timeout\(', l))
+adj_fail = fail_line - removed if fail_line > 0 else 0
 source = ''.join(cleaned)
 tree = ast.parse(source)
+my_test_abs = os.path.abspath('custom/my_test.py')
 for node in ast.walk(tree):
     if isinstance(node, ast.FunctionDef) and node.name == '$first_fail_method':
-        # First line of method body
         body_line = node.body[0].lineno - 1  # 0-indexed
         indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
-        cleaned.insert(body_line, ' ' * indent + 'import pudb; pudb.set_trace()\n')
+        inject_lines = ' ' * indent + 'import pudb; pudb.set_trace()\n'
+        if adj_fail > 0:
+            bp_target = adj_fail + 1  # +1 for the set_trace line we insert
+            inject_lines += ' ' * indent + 'pudb._get_debugger().set_break(\"' + my_test_abs + '\", ' + str(bp_target) + ')\n'
+        cleaned.insert(body_line, inject_lines)
         break
 with open('custom/my_test.py', 'w') as f:
     f.writelines(cleaned)
