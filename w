@@ -443,23 +443,33 @@ launch_pudb() {
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
     python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
-    # Inject pudb.set_trace() at the failing line so PuDB opens right there
-    if [ "$first_fail_line" -gt 0 ] 2>/dev/null; then
-        python3 -c "
-line = $first_fail_line
+    # Prepare debug version: remove timeout decorator and inject set_trace
+    python3 -c "
+import re
 with open('custom/my_test.py', 'r') as f:
     lines = f.readlines()
-if line <= len(lines):
-    # Get indentation of the failing line
-    target = lines[line - 1]
-    indent = len(target) - len(target.lstrip())
-    trace_line = ' ' * indent + 'import pudb; pudb.set_trace()  # auto-injected\n'
-    # Insert before the failing line
-    lines.insert(line - 1, trace_line)
-    with open('custom/my_test.py', 'w') as f:
-        f.writelines(lines)
+
+# Remove @timeout(...) decorator lines
+cleaned = [l for l in lines if not re.match(r'\s*@timeout\(', l)]
+
+# Disable the signal-based timeout code by neutering signal.alarm calls
+cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleaned]
+
+# Inject set_trace at the failing line (adjust for removed lines)
+fail_line = $first_fail_line
+if fail_line > 0:
+    # Recalculate: count how many @timeout lines were before fail_line
+    removed_before = sum(1 for i, l in enumerate(lines[:fail_line-1]) if re.match(r'\s*@timeout\(', l))
+    adj_line = fail_line - removed_before
+    if adj_line <= len(cleaned):
+        target = cleaned[adj_line - 1]
+        indent = len(target) - len(target.lstrip())
+        trace_line = ' ' * indent + 'import pudb; pudb.set_trace()  # auto-injected\n'
+        cleaned.insert(adj_line - 1, trace_line)
+
+with open('custom/my_test.py', 'w') as f:
+    f.writelines(cleaned)
 "
-    fi
     # Launch directly — set_trace() will open PuDB at the failing line
     python3 custom/my_test.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
