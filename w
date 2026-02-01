@@ -168,8 +168,8 @@ print('\n'.join(colored_lines))
             if [ -z "$fail_line" ]; then fail_line=0; fi
             first_fail_line="$fail_line"
 
-            # 2. EXTRACT SOURCE
-            source_code=$(python3 -c "
+            # 2. EXTRACT SOURCE (up to failing line) + ERROR MESSAGE
+            source_and_error=$(python3 -c "
 import ast, re, os, sys
 os.environ['TERM'] = 'xterm-256color'
 try:
@@ -183,6 +183,7 @@ except ImportError:
 file_path = 'custom/my_test.py'
 target_name = '$first_fail_method'
 fail_line_abs = int('$fail_line')
+orig_file = '$orig_file'
 
 try:
     with open(file_path, 'r') as f:
@@ -196,11 +197,13 @@ try:
             break
 
     if method_node:
-        lines = source.splitlines()[method_node.lineno-1 : method_node.end_lineno]
         rel_fail_idx = fail_line_abs - method_node.lineno
+        # Only show lines up to and including the failing line
+        end = method_node.lineno + rel_fail_idx + 1 if fail_line_abs > 0 else method_node.end_lineno
+        lines = source.splitlines()[method_node.lineno-1 : end]
         if lines:
-            indent = len(lines[0]) - len(lines[0].lstrip())
-            lines = [line[indent:] for line in lines]
+            indent_size = len(lines[0]) - len(lines[0].lstrip())
+            lines = [line[indent_size:] for line in lines]
         code_str = '\n'.join(lines)
         if has_pygments:
             formatted = highlight(code_str, PythonLexer(), TerminalFormatter())
@@ -209,7 +212,7 @@ try:
         out_lines = formatted.splitlines()
         final_lines = []
         for i, line in enumerate(out_lines):
-            if i == rel_fail_idx:
+            if i == rel_fail_idx and fail_line_abs > 0:
                 line = f'\x1b[91m--> \x1b[0m{line}'
             else:
                 line = f'    {line}'
@@ -220,11 +223,10 @@ try:
 except Exception as e:
     print(f'Error extracting source: {e}')
 ")
-            
-            # 3. RUN TRACEBACK
+
+            # 3. RUN AND PARSE EXECUTION LOG + ERROR
             raw_trace=$(python3 custom/my_test.py 2>&1)
-            
-            # 4. PARSE LOGS & COLORIZE EXECUTION
+
             parsed_sections=$(echo "$raw_trace" | python3 -c "
 import sys, re
 try:
@@ -235,10 +237,8 @@ try:
 except ImportError:
     has_pygments = False
 
-state = 0 
+state = 0
 buf_log = []
-buf_trace = []
-frame_buffer = []
 failure_summary = []
 
 def colorize_code(code_str):
@@ -254,31 +254,12 @@ def colorize_code(code_str):
     code_str = re.sub(r'\b(self)\b', r'\033[35m\1\033[0m', code_str)
     return code_str
 
-def colorize_frame_line(line):
-    pattern = r'(File \")(.*?)(\", line )(\d+)(, in )(.*)'
-    match = re.search(pattern, line)
-    if match:
-        prefix, path, mid1, lineno, mid2, method = match.groups()
-        return f'  {prefix}\033[34m{path}\033[0m{mid1}\033[32m{lineno}\033[0m{mid2}\033[33m{method}\033[0m\n'
-    return line
-
-def flush_frame(buffer, target_list):
-    if not buffer: return
-    full_text = ''.join(buffer)
-    if 'timeout_decorator' in full_text: return
-    if 'unittest' in full_text: return
-    if 'getattr(test_instance' in full_text: return
-    if 'sys.settrace' in full_text: return
-    if 'decorator.py' in full_text: return
-    buffer[0] = colorize_frame_line(buffer[0])
-    target_list.extend(buffer)
-
 for line in sys.stdin:
     clean = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
     if '___TEST_START___' in clean: state = 1; continue
     if '___FAILURE_SUMMARY_START___' in clean: state = 5; continue
     if '___FAILURE_SUMMARY_END___' in clean: state = 1; continue
-    
+
     if state == 5:
         failure_summary.append(line.strip())
         continue
@@ -287,50 +268,35 @@ for line in sys.stdin:
             code = clean.replace('[EXE] ', '')
             colored_code = colorize_code(code)
             buf_log.append(f'  \033[1;34m>>\033[0m {colored_code}\n')
+        elif 'Traceback (most recent call last)' in clean:
+            state = 3  # skip traceback lines
         else:
-            if 'Traceback (most recent call last)' in clean:
-                 state = 3
-                 buf_trace.append(f'\033[1;31m{line}\033[0m')
-            else:
-                buf_log.append(f'  \033[2m{line}\033[0m')
-    elif state == 3 or state == 0:
-        if line.lstrip().startswith('File '):
-            flush_frame(frame_buffer, buf_trace)
-            frame_buffer = [line]
-        elif frame_buffer:
-            frame_buffer.append(line)
-        else:
-            if not line.startswith(' '):
-                buf_trace.append(f'\033[31m{line}\033[0m')
-            else:
-                buf_trace.append(line)
-
-flush_frame(frame_buffer, buf_trace)
+            buf_log.append(f'  \033[2m{line}\033[0m')
+    elif state == 3:
+        pass  # discard traceback
 
 print('___SECTION_SEP___')
 print('\\n'.join(failure_summary))
 print('___SECTION_SEP___')
 print(''.join(buf_log))
-print('___SECTION_SEP___')
-print(''.join(buf_trace))
 ")
             error_msg=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==2')
             exec_log=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==3')
-            traceback=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==4')
+
+            # --- BUILD DETAIL: Source + Error + Exec Log ---
+            new_detail+=$'\n'"${bold}==========================================${reset}"$'\n'
+            new_detail+="${bold}${blue}$(basename "$orig_file")${reset} ${dim}:: ${first_fail_method}${reset}"$'\n'
+            new_detail+="${bold}------------------------------------------${reset}"$'\n'
+            new_detail+="$source_and_error"
 
             if [ -n "$error_msg" ]; then
-                new_detail+=$'\n'"${bold}==========================================${reset}"$'\n'
-                new_detail+="${bold}${red}FAILURE SUMMARY:${reset}"$'\n'
+                new_detail+=$'\n'
                 colored_summary=$(echo "$error_msg" | python3 -c "
 import sys, re
 for line in sys.stdin:
     line = line.rstrip()
-    # File reference line
-    m = re.match(r'(File \")(.*?)(\", line )(\d+)(.*)', line)
-    if m:
-        print(f'  {m.group(1)}\033[34m{m.group(2)}\033[0m{m.group(3)}\033[32m{m.group(4)}\033[0m{m.group(5)}')
-        continue
-    # Error type header
+    if not line: continue
+    # Error type header (standalone line like 'AssertionError:')
     if line.endswith(':') and ('Error' in line or 'Exception' in line):
         print(f'  \033[1;31m{line}\033[0m')
         continue
@@ -344,7 +310,7 @@ for line in sys.stdin:
     if m3:
         print(f'  \033[1mExpected: \033[32m{m3.group(2)}\033[0m')
         continue
-    # Generic error line (e.g. TypeError: msg)
+    # Generic error (e.g. TypeError: msg)
     m4 = re.match(r'(\w+(?:Error|Exception)):\s*(.*)', line)
     if m4:
         print(f'  \033[1;31m{m4.group(1)}:\033[0m {m4.group(2)}')
@@ -354,17 +320,11 @@ for line in sys.stdin:
                 new_detail+="$colored_summary"
             fi
 
-            new_detail+=$'\n'"${bold}==========================================${reset}"$'\n'
-            new_detail+="${bold}FAILING METHOD SOURCE:${reset}"$'\n'
-            new_detail+="$source_code"
-            
-            new_detail+=$'\n'"${bold}------------------------------------------${reset}"$'\n'
-            new_detail+="${bold}CLEAN TRACEBACK:${reset}"$'\n'
-            new_detail+="$traceback"
-            
-            new_detail+=$'\n'"${bold}------------------------------------------${reset}"$'\n'
-            new_detail+="${bold}INTERACTIVE EXECUTION LOG:${reset}"$'\n'
-            new_detail+="$exec_log"
+            if [ -n "$exec_log" ]; then
+                new_detail+=$'\n'"${bold}------------------------------------------${reset}"$'\n'
+                new_detail+="${bold}EXECUTION LOG:${reset}"$'\n'
+                new_detail+="$exec_log"
+            fi
         else
             new_detail+=$'\n'"${yellow}Could not locate source file containing '$first_fail_method'${reset}"
         fi
@@ -421,10 +381,6 @@ draw_screen() {
         echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
         echo -e "$last_valid_buffer"
         if [ -n "$last_valid_detail" ]; then echo -e "$last_valid_detail"; fi
-        if [ -n "$first_fail_method" ]; then
-            echo ""
-            echo "${dim}Press 'd' to debug ${first_fail_method} in PuDB${reset}"
-        fi
     fi
 }
 
