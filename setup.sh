@@ -4,7 +4,7 @@
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 2. Install dependencies
-pip3 install pudb > /dev/null 2>&1 || pip install pudb > /dev/null 2>&1
+pip3 install pudb pygments > /dev/null 2>&1 || pip install pudb pygments > /dev/null 2>&1
 
 # 3. Configure PuDB (custom Darcula theme, skip welcome screen)
 PUDB_CONFIG_DIR="$HOME/.config/pudb"

@@ -365,17 +365,16 @@ draw_screen() {
         echo "${bold}${red}           COMPILATION ERROR              ${reset}"
         echo "${bold}${red}==========================================${reset}"
         echo ""
-        echo "$current_syntax_error" | while IFS= read -r line; do
-            if [[ "$line" =~ ^[[:space:]]*File ]]; then
-                echo "${blue}${line}${reset}"
-            elif [[ "$line" =~ ^[[:space:]]*\^+ ]] || [[ "$line" =~ ^[[:space:]]*~+\^ ]]; then
-                echo "${yellow}${bold}${line}${reset}"
-            elif [[ "$line" =~ ^SyntaxError ]] || [[ "$line" =~ ^IndentationError ]] || [[ "$line" =~ ^TabError ]]; then
-                echo "${red}${bold}${line}${reset}"
-            else
-                echo "${dim}${line}${reset}"
-            fi
-        done
+        echo "$current_syntax_error" | python3 -c "
+import sys
+try:
+    from pygments import highlight
+    from pygments.lexers import PythonTracebackLexer
+    from pygments.formatters import TerminalFormatter
+    print(highlight(sys.stdin.read(), PythonTracebackLexer(), TerminalFormatter()), end='')
+except ImportError:
+    print(sys.stdin.read(), end='')
+"
         
     elif [ -n "$current_runtime_error" ]; then
         # --- MODE 2: RUNTIME ERROR (CRASH) ---
