@@ -1,66 +1,77 @@
-# Darcula color palette (JetBrains-inspired) for PuDB — 16-color version
+# Darcula color palette (JetBrains-inspired) for PuDB — 256-color version
 # This file is exec'd by PuDB with `palette`, `add_setting`, and `link` in scope.
+
+bg = "h235"           # #2B2B2B
+bg_lighter = "h237"   # #3C3F41
+bg_selected = "h239"  # #4E5254
+dark_red = "h124"
+green = "h114"        # #6A8759
+bright_green = "h150" # #A5C261
+yellow = "h180"       # #D4A656
+orange = "h173"       # #CC7832
+blue = "h68"          # #6897BB
+purple = "h176"       # #9876AA
+white = "h253"        # #A9B7C6
+gray = "h245"         # #808080
+red = "h167"          # #D25252
+bright_white = "h255"
+teal = "h30"
 
 link("current breakpoint", "current frame name")
 link("focused current breakpoint", "focused current frame name")
 
 palette.update({
     # base styles
-    "background": ("white", "dark gray"),
-    "selectable": ("white", "dark gray"),
-    "focused selectable": ("white", "dark gray"),
-    "highlighted": ("white", "dark cyan"),
-    "hotkey": (add_setting("brown", "underline"), "dark gray"),
+    "background": (white, bg),
+    "selectable": (white, bg),
+    "focused selectable": (bright_white, bg_selected),
+    "highlighted": (bright_white, teal),
+    "hotkey": (add_setting(orange, "underline"), bg),
     # general ui
-    "input": ("white", "dark gray"),
-    "button": (add_setting("white", "bold"), "dark gray"),
-    "focused button": (add_setting("white", "bold"), "light gray"),
-    "focused sidebar": ("brown", "dark gray"),
-    "warning": (add_setting("white", "bold"), "dark red"),
-    "group head": (add_setting("brown", "bold"), "dark gray"),
-    "dialog title": (add_setting("white", "bold"), "dark gray"),
+    "input": (white, bg),
+    "button": (add_setting(white, "bold"), bg_lighter),
+    "focused button": (add_setting(bright_white, "bold"), bg_selected),
+    "focused sidebar": (orange, bg_lighter),
+    "warning": (add_setting(bright_white, "bold"), dark_red),
+    "group head": (add_setting(orange, "bold"), bg),
+    "dialog title": (add_setting(bright_white, "bold"), bg),
     # source view
-    "source": ("light gray", "dark gray"),
-    "current source": (add_setting("white", "bold"), "dark gray"),
-    "breakpoint source": (add_setting("white", "bold"), "dark red"),
-    "line number": ("dark gray", "dark gray"),
-    "current line marker": (add_setting("yellow", "bold"), "dark gray"),
-    "breakpoint marker": (add_setting("dark red", "bold"), "dark gray"),
+    "source": (white, bg),
+    "current source": (add_setting(bright_white, "bold"), bg_selected),
+    "breakpoint source": (add_setting(bright_white, "bold"), dark_red),
+    "line number": (gray, bg),
+    "current line marker": (add_setting(yellow, "bold"), bg),
+    "breakpoint marker": (add_setting(red, "bold"), bg),
     # sidebar
-    "sidebar two": ("dark cyan", "dark gray"),
-    "focused sidebar two": ("dark cyan", "dark gray"),
-    "sidebar three": ("light magenta", "dark gray"),
-    "focused sidebar three": ("light magenta", "dark gray"),
+    "sidebar two": (blue, bg),
+    "focused sidebar two": (blue, bg_selected),
+    "sidebar three": (purple, bg),
+    "focused sidebar three": (purple, bg_selected),
     # variables view
-    "highlighted var label": ("white", "dark cyan"),
-    "return label": ("light green", "dark gray"),
-    "focused return label": ("light green", "dark gray"),
+    "highlighted var label": (bright_white, teal),
+    "return label": (bright_green, bg),
+    "focused return label": (bright_green, bg_selected),
     # stack
-    "current frame name": ("light green", "dark gray"),
-    "focused current frame name": ("light green", "dark gray"),
+    "current frame name": (bright_green, bg),
+    "focused current frame name": (bright_green, bg_selected),
     # shell
-    "command line prompt": (add_setting("brown", "bold"), "dark gray"),
-    "command line output": ("light gray", "dark gray"),
-    "command line error": ("light red", "dark gray"),
-    "focused command line output": ("light gray", "dark gray"),
-    "focused command line error": (add_setting("light red", "bold"), "dark gray"),
-    # code syntax — Darcula-inspired mapping:
-    # orange keywords → brown (closest 16-color)
-    # green strings → dark green
-    # blue literals → dark cyan
-    # purple args → light magenta
-    # yellow functions → yellow
-    "literal":   ("dark cyan", "dark gray"),
-    "builtin":   ("brown", "dark gray"),
-    "exception": ("light red", "dark gray"),
-    "keyword2":  ("brown", "dark gray"),
-    "function":  ("yellow", "dark gray"),
-    "class":     (add_setting("yellow", "underline"), "dark gray"),
-    "keyword":   ("brown", "dark gray"),
-    "operator":  ("light gray", "dark gray"),
-    "comment":   ("dark gray", "dark gray"),
-    "docstring": ("dark green", "dark gray"),
-    "argument":  ("light magenta", "dark gray"),
-    "pseudo":    ("light magenta", "dark gray"),
-    "string":    ("dark green", "dark gray"),
+    "command line prompt": (add_setting(orange, "bold"), bg),
+    "command line output": (white, bg),
+    "command line error": (red, bg),
+    "focused command line output": (white, bg_selected),
+    "focused command line error": (add_setting(red, "bold"), bg_selected),
+    # code syntax
+    "literal":   (blue, bg),
+    "builtin":   (orange, bg),
+    "exception": (red, bg),
+    "keyword2":  (orange, bg),
+    "function":  (yellow, bg),
+    "class":     (add_setting(yellow, "underline"), bg),
+    "keyword":   (orange, bg),
+    "operator":  (white, bg),
+    "comment":   (gray, bg),
+    "docstring": (green, bg),
+    "argument":  (purple, bg),
+    "pseudo":    (purple, bg),
+    "string":    (green, bg),
 })
