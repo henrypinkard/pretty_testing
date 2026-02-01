@@ -16,7 +16,7 @@ breakpoints_weight = 1
 current_stack_frame = bottom
 custom_shell =
 custom_stringifier =
-custom_theme = $KIT_ROOT/darcula.py
+custom_theme =
 default_variables_access_level = public
 display = auto
 hide_cmdline_win = False
@@ -32,7 +32,7 @@ shell = internal
 sidebar_width = 0.5
 stack_weight = 1
 stringifier = default
-theme = custom
+theme = $KIT_ROOT/darcula.py
 variables_weight = 1
 wrap_variables = True
 PUDBCFG
