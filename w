@@ -399,23 +399,25 @@ launch_pudb() {
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
     python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
-    # Prepare debug version: remove timeouts, inject set_trace at fail line
+    # Prepare debug version: remove timeouts, inject set_trace at start of test method
     python3 -c "
-import re
+import re, ast
 with open('custom/my_test.py') as f:
     lines = f.readlines()
 # Remove @timeout decorators
 cleaned = [l for l in lines if not re.match(r'\s*@timeout\(', l)]
 # Neuter signal.alarm
 cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleaned]
-# Compute adjusted fail line
-fail_line = $first_fail_line
-if fail_line > 0:
-    removed = sum(1 for l in lines[:fail_line-1] if re.match(r'\s*@timeout\(', l))
-    adj = fail_line - removed - 1  # 0-indexed
-    if 0 <= adj < len(cleaned):
-        indent = len(cleaned[adj]) - len(cleaned[adj].lstrip())
-        cleaned.insert(adj, ' ' * indent + 'import pudb; pudb.set_trace()\n')
+# Find the test method and inject set_trace at its first line
+source = ''.join(cleaned)
+tree = ast.parse(source)
+for node in ast.walk(tree):
+    if isinstance(node, ast.FunctionDef) and node.name == '$first_fail_method':
+        # First line of method body
+        body_line = node.body[0].lineno - 1  # 0-indexed
+        indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
+        cleaned.insert(body_line, ' ' * indent + 'import pudb; pudb.set_trace()\n')
+        break
 with open('custom/my_test.py', 'w') as f:
     f.writelines(cleaned)
 "
