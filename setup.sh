@@ -3,17 +3,20 @@
 # 1. Get the absolute path to the folder where this script lives
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 2. Make binaries executable
+# 2. Install dependencies
+pip3 install pudb > /dev/null 2>&1 || pip install pudb > /dev/null 2>&1
+
+# 3. Make binaries executable
 chmod +x "$KIT_ROOT/w"
 
-# 3. Detect which shell config file to use (Zsh vs Bash)
+# 4. Detect which shell config file to use (Zsh vs Bash)
 if [ -f "$HOME/.zshrc" ]; then
     SHELL_CONFIG="$HOME/.zshrc"
 else
     SHELL_CONFIG="$HOME/.bashrc"
 fi
 
-# 4. Append aliases to the config file so they persist after restart
+# 5. Append aliases to the config file so they persist after restart
 # We check grep first to ensure we don't add the same alias multiple times
 echo "Configuring aliases in $SHELL_CONFIG..."
 
@@ -34,7 +37,7 @@ if ! grep -q "alias d=" "$SHELL_CONFIG"; then
     echo "alias d='python3 -m IPython --pdb $KIT_ROOT/custom/my_test.py'" >> "$SHELL_CONFIG"
 fi
 
-# 5. Also set them for the CURRENT session so they work right now
+# 6. Also set them for the CURRENT session so they work right now
 alias t="$KIT_ROOT/t"
 alias w="$KIT_ROOT/w"
 alias da="$KIT_ROOT/da"

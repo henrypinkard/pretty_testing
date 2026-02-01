@@ -26,7 +26,10 @@ last_valid_detail=""
 current_syntax_error=""
 current_runtime_error=""
 is_syntax_error=false
-test_source_dir="tests" 
+test_source_dir="tests"
+first_fail_file=""
+last_debugged_method=""
+PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints"
 
 # --- 4. CORE FUNCTION ---
 run_tests() {
@@ -68,6 +71,10 @@ run_tests() {
     last_run_time=$(date +"%H:%M:%S")
     new_buffer=""
     first_fail_method=""
+    first_fail_file=""
+    passed_methods=()
+    failed_methods=()
+    failed_files=()
     
     # E. RUN SWEEP
     # CHANGED: Look for any watch_*.py file
@@ -87,12 +94,19 @@ run_tests() {
                  test_name=$(echo "$line" | cut -d' ' -f2)
                  new_buffer+="  [${green}PASS${reset}] $test_name"$'\n'
                  has_tests_in_level=true
+                 passed_methods+=("$test_name")
              elif [[ "$line" == "FAILED_METHOD:"* ]]; then
                  test_name=$(echo "$line" | cut -d' ' -f2)
                  new_buffer+="  [${red}FAIL${reset}] $test_name"$'\n'
                  has_tests_in_level=true
+                 failed_methods+=("$test_name")
                  if [ -z "$first_fail_method" ]; then
                      first_fail_method="$test_name"
+                 fi
+                 # Track source file with failure
+                 fail_src="$test_source_dir/${file_label}.py"
+                 if [ -f "$fail_src" ]; then
+                     failed_files+=("$(cd "$(dirname "$fail_src")" && pwd)/$(basename "$fail_src")")
                  fi
              elif [[ "$line" == "NO_TESTS_FOUND_IN_FILE" ]]; then
                  new_buffer+="  [${yellow}WARNING${reset}] No methods starting with 'test_' found.$'\n'"
@@ -144,6 +158,7 @@ print('\n'.join(colored_lines))
         orig_file=$(grep -l "def $first_fail_method" "$test_source_dir"/*.py | head -n 1)
         
         if [ -n "$orig_file" ]; then
+            first_fail_file="$orig_file"
             python3 "$BUILDER" "$orig_file" "$first_fail_method" > /dev/null 2>&1
             
             # 1. GET FAIL LINE
@@ -353,6 +368,23 @@ for line in sys.stdin:
         fi
     fi
 
+    # G. CLEAN BREAKPOINTS FOR LAST DEBUGGED METHOD IF IT NOW PASSES
+    if [ -n "$last_debugged_method" ] && [ -f "$PUDB_BP_FILE" ]; then
+        # Check if the method we were debugging is now passing
+        method_still_failing=false
+        for fm in "${failed_methods[@]}"; do
+            if [ "$fm" = "$last_debugged_method" ]; then
+                method_still_failing=true
+                break
+            fi
+        done
+        if [ "$method_still_failing" = false ]; then
+            # Method passed — clear breakpoints from the generated debug file
+            sed -i '' "\|custom/my_test.py|d" "$PUDB_BP_FILE" 2>/dev/null
+            last_debugged_method=""
+        fi
+    fi
+
     last_valid_buffer="$new_buffer"
     last_valid_detail="$new_detail"
 }
@@ -387,6 +419,10 @@ draw_screen() {
         echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
         echo -e "$last_valid_buffer"
         if [ -n "$last_valid_detail" ]; then echo -e "$last_valid_detail"; fi
+        if [ -n "$first_fail_method" ]; then
+            echo ""
+            echo "${dim}Press 'd' to debug ${first_fail_method} in PuDB${reset}"
+        fi
     fi
 }
 
@@ -397,8 +433,30 @@ echo "${bold}Starting Test Monitor...${reset}"
 run_tests
 draw_screen
 
+launch_pudb() {
+    if [ -z "$first_fail_method" ] || [ -z "$first_fail_file" ]; then
+        return
+    fi
+    # Track which method we're debugging for breakpoint cleanup
+    last_debugged_method="$first_fail_method"
+    # Ensure the single-method test file is generated
+    python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
+    # Launch PuDB with --continue so it runs to the failure point
+    python3 -m pudb -c custom/my_test.py
+    # Back to dashboard — rerun tests (file may have changed) and redraw
+    run_tests
+    draw_screen
+}
+
 last_checksum=""
 while true; do
+    # Check for keypress (non-blocking, 1s timeout replaces sleep)
+    if read -rsn1 -t 1 key 2>/dev/null; then
+        if [ "$key" = "d" ]; then
+            launch_pudb
+            continue
+        fi
+    fi
     # CHANGED: Ensure checksum watches ALL py files
     current_checksum=$(find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec stat -c %Y {} + 2>/dev/null | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
@@ -408,5 +466,4 @@ while true; do
         fi
         last_checksum="$current_checksum"
     fi
-    sleep 1
 done
