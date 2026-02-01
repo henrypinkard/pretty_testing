@@ -158,7 +158,13 @@ if __name__ == '__main__':
                 try:
                     tb = traceback.extract_tb(e.__traceback__)
                     if tb:
+                        # Walk backwards to find the frame in the user's test file,
+                        # not inside unittest internals like case.py
                         frame = tb[-1]
+                        for f in reversed(tb):
+                            if f.filename == __file__ or 'my_test' in os.path.basename(f.filename) or 'watch_' in os.path.basename(f.filename):
+                                frame = f
+                                break
                         filename = os.path.basename(frame.filename)
                         print(f"File \\"{{filename}}\\", line {{frame.lineno}}")
                 except:
