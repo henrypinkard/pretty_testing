@@ -161,28 +161,8 @@ class TestInjectSetupTrace(unittest.TestCase):
 
 class TestPatchPostmortem(unittest.TestCase):
 
-    def test_inserts_pudb_set_trace_before_raise(self):
-        lines = [
-            '                some code\n',
-            '                raise e\n',
-            '                more code\n',
-        ]
-        result = patch_postmortem(lines, 'pudb')
-        joined = ''.join(result)
-        self.assertIn('pudb.set_trace()', joined)
-        self.assertIn('raise e', joined)
-        # set_trace must come BEFORE raise e
-        self.assertLess(joined.index('pudb.set_trace'), joined.index('raise e'))
-
-    def test_inserts_pdbpp_set_trace_before_raise(self):
-        lines = ['                raise e\n']
-        result = patch_postmortem(lines, 'pdbpp')
-        joined = ''.join(result)
-        self.assertIn('pdb.set_trace()', joined)
-        self.assertNotIn('pudb', joined)
-
-    def test_no_raise_unchanged(self):
-        lines = ['    x = 1\n', '    y = 2\n']
+    def test_returns_lines_unchanged(self):
+        lines = ['    x = 1\n', '    raise e\n']
         result = patch_postmortem(lines, 'pudb')
         self.assertEqual(lines, result)
 

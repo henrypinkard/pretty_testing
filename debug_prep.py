@@ -70,26 +70,8 @@ def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb')
 
 
 def patch_postmortem(lines, debugger):
-    """Insert a debugger entry point before 'raise e' in the runner block.
-
-    Injects set_trace() right before 'raise e' so the debugger opens at the
-    exception handler with 'e' in scope.  The user can inspect the exception,
-    navigate the stack, etc.  When they quit, raise e fires and the script exits.
-    """
-    if debugger == 'pdbpp':
-        trace = 'import pdb; pdb.set_trace()'
-    else:
-        trace = 'import pudb; pudb.set_trace()'
-    result = []
-    patched = False
-    for line in lines:
-        if not patched and line.strip() == 'raise e':
-            indent = len(line) - len(line.lstrip())
-            pad = ' ' * indent
-            result.append(f'{pad}{trace}\n')
-            patched = True
-        result.append(line)
-    return result
+    """No-op: reserved for future post-mortem support."""
+    return list(lines)
 
 
 def inject_setup_trace(lines, debugger='pudb'):
