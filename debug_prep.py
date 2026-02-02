@@ -70,8 +70,34 @@ def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb')
 
 
 def patch_postmortem(lines, debugger):
-    """No-op: reserved for future post-mortem support."""
-    return list(lines)
+    """Replace 'raise e' in runner block with filtered post_mortem.
+
+    Walks the traceback to the last frame in the user's test file, truncates
+    tb_next so the debugger can't descend into unittest internals, then calls
+    post_mortem at the correct frame.
+    Uses e.__traceback__ directly (e is in scope from the except block).
+    """
+    pm_mod = 'pudb' if debugger == 'pudb' else 'pdb'
+    # Indentation matches the runner block in test_generator.py (16 spaces)
+    pad = ' ' * 16
+    replacement = (
+        f"{pad}_pm_tb = e.__traceback__; _pm_ut = _pm_tb\n"
+        f"{pad}while _pm_tb:\n"
+        f"{pad}    if _pm_tb.tb_frame.f_code.co_filename == __file__: _pm_ut = _pm_tb\n"
+        f"{pad}    _pm_tb = _pm_tb.tb_next\n"
+        f"{pad}try: _pm_ut.tb_next = None\n"
+        f"{pad}except: pass\n"
+        f"{pad}import {pm_mod}; {pm_mod}.post_mortem(e.__traceback__)\n"
+    )
+    result = []
+    patched = False
+    for line in lines:
+        if not patched and line.strip() == 'raise e':
+            result.append(replacement)
+            patched = True
+        else:
+            result.append(line)
+    return result
 
 
 def inject_setup_trace(lines, debugger='pudb'):

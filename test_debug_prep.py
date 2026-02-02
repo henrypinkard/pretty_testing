@@ -161,8 +161,27 @@ class TestInjectSetupTrace(unittest.TestCase):
 
 class TestPatchPostmortem(unittest.TestCase):
 
-    def test_returns_lines_unchanged(self):
-        lines = ['    x = 1\n', '    raise e\n']
+    def test_replaces_raise_with_pudb_postmortem(self):
+        lines = [
+            '                some code\n',
+            '                raise e\n',
+            '                more code\n',
+        ]
+        result = patch_postmortem(lines, 'pudb')
+        joined = ''.join(result)
+        self.assertNotIn('raise e', joined)
+        self.assertIn('pudb.post_mortem', joined)
+        self.assertIn('e.__traceback__', joined)
+
+    def test_replaces_raise_with_pdbpp_postmortem(self):
+        lines = ['                raise e\n']
+        result = patch_postmortem(lines, 'pdbpp')
+        joined = ''.join(result)
+        self.assertIn('pdb.post_mortem', joined)
+        self.assertNotIn('pudb', joined)
+
+    def test_no_raise_unchanged(self):
+        lines = ['    x = 1\n', '    y = 2\n']
         result = patch_postmortem(lines, 'pudb')
         self.assertEqual(lines, result)
 
