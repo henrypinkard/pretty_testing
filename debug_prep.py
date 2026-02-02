@@ -81,6 +81,12 @@ def patch_postmortem(lines, debugger):
     # Indentation matches the runner block in test_generator.py (16 spaces)
     pad = ' ' * 16
     replacement = (
+        f"{pad}import sys as _s; _tb = _s.exc_info()[2]; _ut = _tb\n"
+        f"{pad}while _tb:\n"
+        f"{pad}    if _tb.tb_frame.f_code.co_filename == __file__: _ut = _tb\n"
+        f"{pad}    _tb = _tb.tb_next\n"
+        f"{pad}try: _ut.tb_next = None\n"
+        f"{pad}except: pass\n"
         f"{pad}import {pm_mod}; {pm_mod}.post_mortem()\n"
     )
     result = []
