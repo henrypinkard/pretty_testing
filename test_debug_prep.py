@@ -161,27 +161,32 @@ class TestInjectSetupTrace(unittest.TestCase):
 
 class TestPatchPostmortem(unittest.TestCase):
 
-    def test_replaces_raise_with_pudb_postmortem(self):
+    def test_injects_pudb_excepthook_after_import_traceback(self):
         lines = [
-            '                some code\n',
+            "if __name__ == '__main__':\n",
+            '    import traceback\n',
+            '    some_code()\n',
             '                raise e\n',
-            '                more code\n',
         ]
         result = patch_postmortem(lines, 'pudb')
         joined = ''.join(result)
-        self.assertNotIn('raise e', joined)
+        # excepthook injected, raise e kept
         self.assertIn('pudb.post_mortem', joined)
-        self.assertIn('tb_next = None', joined)
+        self.assertIn('sys.excepthook', joined)
+        self.assertIn('raise e', joined)
         self.assertIn('__file__', joined)
 
-    def test_replaces_raise_with_pdbpp_postmortem(self):
-        lines = ['                raise e\n']
+    def test_injects_pdbpp_excepthook(self):
+        lines = [
+            '    import traceback\n',
+            '    code\n',
+        ]
         result = patch_postmortem(lines, 'pdbpp')
         joined = ''.join(result)
         self.assertIn('pdb.post_mortem', joined)
         self.assertNotIn('pudb', joined)
 
-    def test_no_raise_unchanged(self):
+    def test_no_import_traceback_unchanged(self):
         lines = ['    x = 1\n', '    y = 2\n']
         result = patch_postmortem(lines, 'pudb')
         self.assertEqual(lines, result)
