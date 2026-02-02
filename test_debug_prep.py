@@ -11,6 +11,7 @@ from debug_prep import (
     neutralize_alarms,
     inject_set_trace,
     inject_setup_trace,
+    patch_postmortem,
     run_preflight,
 )
 
@@ -109,7 +110,9 @@ class TestInjectSetTrace(unittest.TestCase):
         """)
         result = inject_set_trace(lines, 'test_bar', debugger='pdbpp')
         joined = ''.join(result)
-        self.assertIn('import pdb; pdb.set_trace()', joined)
+        self.assertIn('import pdb;', joined)
+        self.assertIn('pdb.set_trace()', joined)
+        self.assertIn('sticky_by_default', joined)
         self.assertNotIn('pudb', joined)
 
 
@@ -154,6 +157,34 @@ class TestInjectSetupTrace(unittest.TestCase):
         """)
         result = inject_setup_trace(lines)
         self.assertIn('set_trace', result[0])
+
+
+class TestPatchPostmortem(unittest.TestCase):
+
+    def test_replaces_raise_with_pudb_postmortem(self):
+        lines = [
+            '                some code\n',
+            '                raise e\n',
+            '                more code\n',
+        ]
+        result = patch_postmortem(lines, 'pudb')
+        joined = ''.join(result)
+        self.assertNotIn('raise e', joined)
+        self.assertIn('pudb.post_mortem', joined)
+        self.assertIn('tb_next = None', joined)
+        self.assertIn('__file__', joined)
+
+    def test_replaces_raise_with_pdbpp_postmortem(self):
+        lines = ['                raise e\n']
+        result = patch_postmortem(lines, 'pdbpp')
+        joined = ''.join(result)
+        self.assertIn('pdb.post_mortem', joined)
+        self.assertNotIn('pudb', joined)
+
+    def test_no_raise_unchanged(self):
+        lines = ['    x = 1\n', '    y = 2\n']
+        result = patch_postmortem(lines, 'pudb')
+        self.assertEqual(lines, result)
 
 
 class TestPreflight(unittest.TestCase):

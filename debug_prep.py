@@ -27,9 +27,10 @@ def neutralize_alarms(lines):
 def _trace_line(debugger, abs_path=None, bp_target=None):
     """Return the set_trace injection string (no indent, no newline)."""
     if debugger == 'pdbpp':
+        sticky = "hasattr(pdb,'DefaultConfig') and setattr(pdb.DefaultConfig,'sticky_by_default',True); "
         if bp_target and abs_path:
-            return f'import pdb; _dbg = pdb.Pdb(); _dbg.set_break("{abs_path}", {bp_target}); pdb.set_trace()'
-        return 'import pdb; pdb.set_trace()'
+            return f'import pdb; {sticky}_dbg = pdb.Pdb(); _dbg.set_break("{abs_path}", {bp_target}); pdb.set_trace()'
+        return f'import pdb; {sticky}pdb.set_trace()'
     else:
         if bp_target and abs_path:
             return f'import pudb; _dbg = pudb._get_debugger(); _dbg.set_break("{abs_path}", {bp_target}); pudb.set_trace()'
@@ -66,6 +67,37 @@ def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb')
     trace = _trace_line(debugger)
     cleaned.insert(0, trace + '\n')
     return cleaned
+
+
+def patch_postmortem(lines, debugger):
+    """Replace 'raise e' in runner block with filtered post_mortem.
+
+    Walks the traceback to the last frame in the user's test file, truncates
+    tb_next so the debugger can't descend into unittest internals, then calls
+    post_mortem at the correct frame.
+    """
+    pm_mod = 'pudb' if debugger == 'pudb' else 'pdb'
+    # The replacement code: find last frame in __file__, truncate, post_mortem
+    # Indentation matches the runner block in test_generator.py (16 spaces)
+    pad = ' ' * 16
+    replacement = (
+        f"{pad}import sys as _s; _tb = _s.exc_info()[2]; _ut = _tb\n"
+        f"{pad}while _tb:\n"
+        f"{pad}    if _tb.tb_frame.f_code.co_filename == __file__: _ut = _tb\n"
+        f"{pad}    _tb = _tb.tb_next\n"
+        f"{pad}try: _ut.tb_next = None\n"
+        f"{pad}except: pass\n"
+        f"{pad}import {pm_mod}; {pm_mod}.post_mortem(_s.exc_info()[2])\n"
+    )
+    result = []
+    patched = False
+    for line in lines:
+        if not patched and line.strip() == 'raise e':
+            result.append(replacement)
+            patched = True
+        else:
+            result.append(line)
+    return result
 
 
 def inject_setup_trace(lines, debugger='pudb'):
@@ -124,6 +156,7 @@ def full_debug_prep(file_path, method, fail_line=0, debugger='pudb'):
         lines = f.readlines()
     abs_path = os.path.abspath(file_path)
     result = inject_set_trace(lines, method, fail_line, abs_path, debugger)
+    result = patch_postmortem(result, debugger)
     with open(file_path, 'w') as f:
         f.writelines(result)
 

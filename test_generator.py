@@ -76,42 +76,48 @@ if __name__ == '__main__':
     import unittest
     import inspect
     import traceback
-    
-    # --- UNIVERSAL DISCOVERY ---
-    target_class = None
+
+    # --- DISCOVER ALL TEST CLASSES ---
     current_module = sys.modules[__name__]
+    test_classes = []
     for name, obj in inspect.getmembers(current_module):
         if inspect.isclass(obj) and issubclass(obj, unittest.TestCase):
             if obj is not unittest.TestCase:
-                target_class = obj
-                break
-    
-    if not target_class:
+                test_classes.append(obj)
+
+    if not test_classes:
         print("NO_TEST_CLASS_FOUND")
         sys.exit(0)
 
-    loader = unittest.TestLoader()
-    try:
-        available_methods = loader.getTestCaseNames(target_class)
-    except Exception as e:
-        print("ERROR_LOADING_TESTS:", e)
-        sys.exit(1)
-
+    # --- BUILD (class, method) PAIRS ---
     target_method = {target_method_repr}
-    if target_method:
-        methods = [target_method] if target_method in available_methods else []
-    else:
-        methods = available_methods
+    pairs = []
+    for _cls in test_classes:
+        _loader = unittest.TestLoader()
+        try:
+            _cls_methods = _loader.getTestCaseNames(_cls)
+        except Exception as e:
+            print("ERROR_LOADING_TESTS:", e)
+            continue
+        if target_method:
+            if target_method in _cls_methods:
+                pairs = [(_cls, target_method)]
+                break
+        else:
+            for _m in _cls_methods:
+                pairs.append((_cls, _m))
 
-    if not methods:
+    if not pairs:
         print("NO_TESTS_FOUND_IN_FILE")
         sys.exit(0)
 
     if len(sys.argv) > 1:
          method_to_run = sys.argv[1]
-         if method_to_run in methods:
-             methods = [method_to_run]
-    
+         pairs = [(_c, _m) for _c, _m in pairs if _m == method_to_run]
+
+    methods = [_m for _, _m in pairs]
+    single_method = len(pairs) == 1
+
     def audit_trace(frame, event, arg):
         if event != 'line': return audit_trace
         if frame.f_code.co_name not in methods: return audit_trace
@@ -124,7 +130,40 @@ if __name__ == '__main__':
         print(f"[EXE] {{line}}")
         return audit_trace
 
-    for method_name in methods:
+    # --- setUpModule ---
+    if hasattr(current_module, 'setUpModule'):
+        try:
+            current_module.setUpModule()
+        except Exception as _e:
+            for _, _m in pairs:
+                print("FAILED_METHOD:", _m)
+                print(f"  (setUpModule failed: {{_e}})")
+            sys.exit(1)
+
+    # --- setUpClass TRACKING ---
+    _setup_done = set()
+    _setup_failed = set()
+    _teardown_classes = []
+
+    for target_class, method_name in pairs:
+        # Skip all methods from a class whose setUpClass failed
+        if target_class in _setup_failed:
+            print("FAILED_METHOD:", method_name)
+            print("  (setUpClass failed for this class)")
+            continue
+
+        # Call setUpClass once per class
+        if target_class not in _setup_done:
+            _setup_done.add(target_class)
+            _teardown_classes.append(target_class)
+            try:
+                target_class.setUpClass()
+            except Exception as _e:
+                _setup_failed.add(target_class)
+                print("FAILED_METHOD:", method_name)
+                print(f"  (setUpClass failed: {{_e}})")
+                continue
+
         try:
             test_instance = target_class(method_name)
         except:
@@ -138,23 +177,38 @@ if __name__ == '__main__':
             print(f"  (setUp failed: {{e}})")
             continue
 
+        _method_func = getattr(test_instance, method_name)
+        _expecting_failure = getattr(_method_func, '__unittest_expecting_failure__', False)
+
         try:
-            if len(methods) == 1:
+            if single_method:
                 print("___TEST_START___")
                 sys.settrace(audit_trace)
-            
-            getattr(test_instance, method_name)()
-            
-            if len(methods) == 1:
+
+            _method_func()
+
+            if single_method:
                 sys.settrace(None)
+            if _expecting_failure:
+                # Test passed when expected to fail — unexpected success
+                print("FAILED_METHOD:", method_name)
+                continue
             print("passed:", method_name)
+        except unittest.SkipTest:
+            if single_method:
+                sys.settrace(None)
+            print("skipped:", method_name)
         except Exception as e:
             sys.settrace(None)
+            # Handle @expectedFailure: flag-based (3.12+) or wrapper-based (older)
+            if _expecting_failure or type(e).__name__ == '_ExpectedFailure':
+                print("passed:", method_name)
+                continue
             print("FAILED_METHOD:", method_name)
-            
-            if len(methods) == 1:
+
+            if single_method:
                 print("\\n___FAILURE_SUMMARY_START___")
-                
+
                 try:
                     tb = traceback.extract_tb(e.__traceback__)
                     if tb:
@@ -169,12 +223,12 @@ if __name__ == '__main__':
                         print(f"File \\"{{filename}}\\", line {{frame.lineno}}")
                 except:
                     pass
-                
+
                 # --- ROBUST FORMATTING ---
                 msg = str(e)
                 # Split by newline to ignore the 'diff' that unittest adds
                 first_line = msg.split('\\n', 1)[0]
-                
+
                 if " != " in first_line:
                     parts = first_line.split(" != ", 1)
                     if len(parts) == 2:
@@ -186,15 +240,30 @@ if __name__ == '__main__':
                 else:
                     # Fallback for complex messages
                     print(f"{{type(e).__name__}}: {{e}}")
-                
+
                 print("___FAILURE_SUMMARY_END___\\n")
-                
+
                 raise e
-            pass 
+            pass
         finally:
              if hasattr(test_instance, 'tearDown'):
                  try: test_instance.tearDown()
                  except: pass
+
+    # --- tearDownClass ---
+    for _cls in _teardown_classes:
+        if _cls not in _setup_failed:
+            try:
+                _cls.tearDownClass()
+            except:
+                pass
+
+    # --- tearDownModule ---
+    if hasattr(current_module, 'tearDownModule'):
+        try:
+            current_module.tearDownModule()
+        except:
+            pass
     """
     
     try:

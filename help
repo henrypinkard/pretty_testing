@@ -37,10 +37,12 @@ ${bold}${red}LEVEL 3: nothing works, nuclear fallback${reset}
   1. Open your test file
   2. Add this line right inside the test method:
        ${bold}import pudb; pudb.set_trace()${reset}    ${dim}# or: import pdb; pdb.set_trace()${reset}
-  3. Run it:
+  3. Run it (test files have no main block, so you must use unittest):
+       ${bold}python3 -m unittest tests/foo.py -k test_method_name${reset}
+     or if that fails:
+       ${bold}python3 -c "import unittest; unittest.main(module=None, argv=['', 'discover', '-s', 'tests', '-k', 'test_method'])"${reset}
+     or with pytest if installed:
        ${bold}python3 -m pytest tests/foo.py::TestClass::test_bar -s${reset}
-     or just:
-       ${bold}python3 tests/foo.py${reset}
 
 ${bold}QUICK DIAGNOSIS${reset}
   ${dim}Syntax error?${reset}       python3 -m py_compile your_file.py

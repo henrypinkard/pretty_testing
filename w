@@ -105,6 +105,10 @@ run_tests() {
                  if [ -f "$fail_src" ]; then
                      failed_files+=("$(cd "$(dirname "$fail_src")" && pwd)/$(basename "$fail_src")")
                  fi
+             elif [[ "$line" == "skipped:"* ]]; then
+                 test_name=$(echo "$line" | cut -d' ' -f2)
+                 new_buffer+="  [${dim}SKIP${reset}] $test_name"$'\n'
+                 has_tests_in_level=true
              elif [[ "$line" == "NO_TESTS_FOUND_IN_FILE" ]]; then
                  new_buffer+="  [${yellow}WARNING${reset}] No methods starting with 'test_' found.$'\n'"
              fi

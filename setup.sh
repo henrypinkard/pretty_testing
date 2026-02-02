@@ -6,6 +6,16 @@ KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 2. Install dependencies
 pip3 install pudb pdbpp pygments > /dev/null 2>&1 || pip install pudb pdbpp pygments > /dev/null 2>&1
 
+# 3a. Configure pdb++ (sticky mode by default)
+PDBRC="$HOME/.pdbrc.py"
+if [ ! -f "$PDBRC" ] || ! grep -q "sticky_by_default" "$PDBRC"; then
+    cat >> "$PDBRC" << 'PDBCFG'
+import pdb
+class Config(pdb.DefaultConfig):
+    sticky_by_default = True
+PDBCFG
+fi
+
 # 3. Configure PuDB (custom Darcula theme, skip welcome screen)
 PUDB_CONFIG_DIR="$HOME/.config/pudb"
 mkdir -p "$PUDB_CONFIG_DIR"
