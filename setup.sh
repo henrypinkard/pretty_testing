@@ -81,5 +81,5 @@ alias da="$KIT_ROOT/da"
 alias d="python3 -m IPython --pdb $KIT_ROOT/custom/my_test.py"
 
 echo "Debug Kit Loaded!"
-echo "Run 't' to test, 'w' to watch, 'da' to debug all."
+echo "Run 'w' to watch"
 echo "Aliases have been saved to $SHELL_CONFIG and will work in new terminals."

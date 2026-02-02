@@ -504,12 +504,37 @@ for name in dir(mod):
         break
 " 2>&1)
     if [ $? -ne 0 ]; then
-        last_debug_error="Cannot launch debugger — test setup failed:\n\n$preflight_output"
-        draw_screen
-        return
+        # setUp or import failed — inject set_trace into setUp so user can debug it
+        python3 -c "
+import ast, sys
+
+with open('custom/my_test.py') as f:
+    source = f.read()
+lines = source.splitlines(True)
+
+tree = ast.parse(source)
+injected = False
+for node in ast.walk(tree):
+    if isinstance(node, ast.FunctionDef) and node.name == 'setUp':
+        body_line = node.body[0].lineno - 1
+        indent = len(lines[body_line]) - len(lines[body_line].lstrip())
+        pad = ' ' * indent
+        lines.insert(body_line, pad + 'import pudb; pudb.set_trace()\n')
+        injected = True
+        break
+
+if not injected:
+    # No setUp found — inject at top of file
+    lines.insert(0, 'import pudb; pudb.set_trace()\n')
+
+with open('custom/my_test.py', 'w') as f:
+    f.writelines(lines)
+" 2>/dev/null
+        python3 custom/my_test.py
+    else
+        # Pre-flight passed — launch PuDB interactively (set_trace is in test method)
+        python3 custom/my_test.py
     fi
-    # Pre-flight passed — launch PuDB interactively
-    python3 custom/my_test.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
     draw_screen
