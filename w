@@ -191,7 +191,7 @@ run_tests() {
 
 # --- 5. UI UPDATE ---
 draw_screen() {
-    printf '\033[2J\033[3J\033[H'
+    printf '\033[H\033[2J'
 
     if [ "$is_syntax_error" = true ]; then
         echo "${bold}Last Run: $(date +"%H:%M:%S")${reset}"
@@ -231,7 +231,9 @@ draw_screen() {
 }
 
 # --- 6. MAIN LOOP ---
-printf '\033[2J\033[3J\033[H'
+tput smcup  # switch to alternate screen buffer
+trap 'tput rmcup' EXIT INT TERM
+printf '\033[2J\033[H'
 echo "${bold}Starting Test Monitor...${reset}"
 run_tests
 draw_screen

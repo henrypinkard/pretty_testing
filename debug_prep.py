@@ -75,19 +75,19 @@ def patch_postmortem(lines, debugger):
     Walks the traceback to the last frame in the user's test file, truncates
     tb_next so the debugger can't descend into unittest internals, then calls
     post_mortem at the correct frame.
+    Uses e.__traceback__ directly (e is in scope from the except block).
     """
     pm_mod = 'pudb' if debugger == 'pudb' else 'pdb'
-    # The replacement code: find last frame in __file__, truncate, post_mortem
     # Indentation matches the runner block in test_generator.py (16 spaces)
     pad = ' ' * 16
     replacement = (
-        f"{pad}import sys as _s; _tb = _s.exc_info()[2]; _ut = _tb\n"
-        f"{pad}while _tb:\n"
-        f"{pad}    if _tb.tb_frame.f_code.co_filename == __file__: _ut = _tb\n"
-        f"{pad}    _tb = _tb.tb_next\n"
-        f"{pad}try: _ut.tb_next = None\n"
+        f"{pad}_pm_tb = e.__traceback__; _pm_ut = _pm_tb\n"
+        f"{pad}while _pm_tb:\n"
+        f"{pad}    if _pm_tb.tb_frame.f_code.co_filename == __file__: _pm_ut = _pm_tb\n"
+        f"{pad}    _pm_tb = _pm_tb.tb_next\n"
+        f"{pad}try: _pm_ut.tb_next = None\n"
         f"{pad}except: pass\n"
-        f"{pad}import {pm_mod}; {pm_mod}.post_mortem(_s.exc_info()[2])\n"
+        f"{pad}import {pm_mod}; {pm_mod}.post_mortem(e.__traceback__)\n"
     )
     result = []
     patched = False
@@ -153,19 +153,20 @@ def full_debug_prep(file_path, method, fail_line=0, debugger='pudb'):
     This is the single entry point for both `w` and manual use.
     """
     with open(file_path) as f:
-        lines = f.readlines()
+        original_lines = f.readlines()
     abs_path = os.path.abspath(file_path)
-    result = inject_set_trace(lines, method, fail_line, abs_path, debugger)
+    result = inject_set_trace(original_lines, method, fail_line, abs_path, debugger)
     result = patch_postmortem(result, debugger)
     with open(file_path, 'w') as f:
         f.writelines(result)
 
     ok, err = run_preflight(file_path, method)
     if not ok:
-        # setUp or import failed — re-inject into setUp instead
-        with open(file_path) as f:
-            lines = f.readlines()
-        result = inject_setup_trace(lines, debugger)
+        # setUp or import failed — start fresh from original, inject into setUp instead
+        cleaned = remove_timeouts(original_lines)
+        cleaned = neutralize_alarms(cleaned)
+        result = inject_setup_trace(cleaned, debugger)
+        result = patch_postmortem(result, debugger)
         with open(file_path, 'w') as f:
             f.writelines(result)
         print(f'preflight failed ({err}), injected trace into setUp', file=sys.stderr)
