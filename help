@@ -1,0 +1,52 @@
+#!/bin/bash
+# Standalone help — works even if w is completely broken
+KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+bold=$(tput bold)
+reset=$(tput sgr0)
+dim=$(tput dim)
+green=$(tput setaf 2)
+blue=$(tput setaf 4)
+red=$(tput setaf 1)
+yellow=$(tput setaf 3)
+
+cat <<HELPTEXT
+${bold}=== PRETTY TESTING — EMERGENCY REFERENCE ===${reset}
+
+${bold}${green}LEVEL 0: w is working${reset}
+  Just use it. Keys:
+    ${green}d${reset}  debug first failure with pudb
+    ${green}p${reset}  debug first failure with pdb++
+  Tests come from ${blue}custom_tests/${reset} if it exists, otherwise ${blue}tests/${reset}.
+
+${bold}${yellow}LEVEL 1: w is broken, but Python works${reset}
+  Use ${blue}dbg${reset} — one command does everything:
+    ${bold}dbg tests/foo.py test_bar${reset}          ${dim}# pudb (default)${reset}
+    ${bold}dbg tests/foo.py test_bar pdbpp${reset}     ${dim}# pdb++ instead${reset}
+    ${bold}dbg custom_tests/foo.py test_bar${reset}    ${dim}# custom test dir${reset}
+
+${bold}${red}LEVEL 2: dbg is broken, do it by hand${reset}
+  Two steps:
+    ${bold}python3 ${KIT_ROOT}/test_generator.py tests/foo.py test_bar${reset}
+    ${bold}python3 custom/my_test.py${reset}
+  This runs the test with tracing. To debug, add one line before running:
+    ${bold}python3 ${KIT_ROOT}/debug_prep.py debug custom/my_test.py --method test_bar${reset}
+    ${bold}python3 custom/my_test.py${reset}
+
+${bold}${red}LEVEL 3: nothing works, nuclear fallback${reset}
+  1. Open your test file
+  2. Add this line right inside the test method:
+       ${bold}import pudb; pudb.set_trace()${reset}    ${dim}# or: import pdb; pdb.set_trace()${reset}
+  3. Run it:
+       ${bold}python3 -m pytest tests/foo.py::TestClass::test_bar -s${reset}
+     or just:
+       ${bold}python3 tests/foo.py${reset}
+
+${bold}QUICK DIAGNOSIS${reset}
+  ${dim}Syntax error?${reset}       python3 -m py_compile your_file.py
+  ${dim}Import crashing?${reset}    python3 -c "import your_module"
+  ${dim}setUp crashing?${reset}     python3 ${KIT_ROOT}/debug_prep.py debug custom/my_test.py \\
+                        --method test_bar ${dim}# auto-detects and injects into setUp${reset}
+  ${dim}Wrong tests?${reset}        Check header in w: [CUSTOM TESTS] vs [OFFICIAL TESTS]
+                      w uses ${blue}custom_tests/${reset} if it exists, else ${blue}tests/${reset}
+HELPTEXT
