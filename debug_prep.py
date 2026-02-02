@@ -70,36 +70,25 @@ def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb')
 
 
 def patch_postmortem(lines, debugger):
-    """Install sys.excepthook for filtered post_mortem debugging.
+    """Insert a debugger entry point before 'raise e' in the runner block.
 
-    Instead of replacing 'raise e', injects a sys.excepthook near the top of
-    the __main__ block.  When raise e propagates out as an unhandled exception,
-    the hook fires and opens pudb/pdb in post-mortem mode with the traceback
-    trimmed to the user's test file.  This is more reliable than calling
-    post_mortem() inline because no prior debugger session is active.
+    Injects set_trace() right before 'raise e' so the debugger opens at the
+    exception handler with 'e' in scope.  The user can inspect the exception,
+    navigate the stack, etc.  When they quit, raise e fires and the script exits.
     """
-    pm_mod = 'pudb' if debugger == 'pudb' else 'pdb'
-    pad = '    '  # inside if __name__ == '__main__' block
-    hook_lines = (
-        f"{pad}import {pm_mod}\n"
-        f"{pad}def _pm_excepthook(_et, _ev, _tb):\n"
-        f"{pad}    _ut = _tb\n"
-        f"{pad}    _cur = _tb\n"
-        f"{pad}    while _cur:\n"
-        f"{pad}        if _cur.tb_frame.f_code.co_filename == __file__: _ut = _cur\n"
-        f"{pad}        _cur = _cur.tb_next\n"
-        f"{pad}    try: _ut.tb_next = None\n"
-        f"{pad}    except: pass\n"
-        f"{pad}    {pm_mod}.post_mortem(_tb)\n"
-        f"{pad}sys.excepthook = _pm_excepthook\n"
-    )
+    if debugger == 'pdbpp':
+        trace = 'import pdb; pdb.set_trace()'
+    else:
+        trace = 'import pudb; pudb.set_trace()'
     result = []
-    injected = False
+    patched = False
     for line in lines:
+        if not patched and line.strip() == 'raise e':
+            indent = len(line) - len(line.lstrip())
+            pad = ' ' * indent
+            result.append(f'{pad}{trace}\n')
+            patched = True
         result.append(line)
-        if not injected and line.strip() == 'import traceback':
-            result.append(hook_lines)
-            injected = True
     return result
 
 

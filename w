@@ -191,7 +191,7 @@ run_tests() {
 
 # --- 5. UI UPDATE ---
 draw_screen() {
-    printf '\033[2J\033[3J\033[H'
+    printf '\033[2J\033[H'
 
     if [ "$is_syntax_error" = true ]; then
         echo "${bold}Last Run: $(date +"%H:%M:%S")${reset}"
@@ -231,8 +231,10 @@ draw_screen() {
 }
 
 # --- 6. MAIN LOOP ---
-trap 'printf "\n"; exit 0' INT TERM
-printf '\033[2J\033[3J\033[H'
+tput smcup
+cleanup() { tput rmcup; }
+trap 'cleanup; exit 0' INT TERM EXIT
+printf '\033[2J\033[H'
 echo "${bold}Starting Test Monitor...${reset}"
 run_tests
 draw_screen
@@ -278,7 +280,9 @@ launch_debugger() {
         fi
     fi
 
+    tput rmcup
     python3 custom/my_test.py
+    tput smcup
 
     run_tests
     draw_screen
