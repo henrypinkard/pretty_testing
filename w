@@ -30,12 +30,14 @@ test_source_dir="tests"
 first_fail_file=""
 last_debugged_method=""
 first_fail_line=0
+last_debug_error=""
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 
 # --- 4. CORE FUNCTION ---
 run_tests() {
     # RESET ERRORS
     current_runtime_error=""
+    last_debug_error=""
     
     # A. SELECT SOURCE
     # CHANGED: Look for *.py instead of level_*_tests.py
@@ -391,6 +393,14 @@ except ImportError:
         echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
         echo -e "$last_valid_buffer"
         if [ -n "$last_valid_detail" ]; then echo -e "$last_valid_detail"; fi
+        if [ -n "$last_debug_error" ]; then
+            echo ""
+            echo "${bold}${red}==========================================${reset}"
+            echo "${bold}${red}         LAST DEBUG SESSION ERROR         ${reset}"
+            echo "${bold}${red}==========================================${reset}"
+            echo ""
+            echo -e "$last_debug_error"
+        fi
     fi
 }
 
@@ -405,6 +415,7 @@ launch_pudb() {
     if [ -z "$first_fail_method" ] || [ -z "$first_fail_file" ]; then
         return
     fi
+    last_debug_error=""
     # Fix theme in pudb config in case it got wiped by prefs save
     PUDB_CFG="$HOME/.config/pudb/pudb.cfg"
     if [ -f "$PUDB_CFG" ]; then
@@ -414,40 +425,69 @@ launch_pudb() {
     # Track which method we're debugging for breakpoint cleanup
     last_debugged_method="$first_fail_method"
     # Ensure the single-method test file is generated
-    python3 "$BUILDER" "$first_fail_file" "$first_fail_method" > /dev/null 2>&1
+    builder_output=$(python3 "$BUILDER" "$first_fail_file" "$first_fail_method" 2>&1)
+    if [ $? -ne 0 ]; then
+        last_debug_error="Builder failed:\n$builder_output"
+        draw_screen
+        return
+    fi
     # Prepare debug version: remove timeouts, inject set_trace + set_break at method start
     my_test_abs="$(cd custom && pwd)/my_test.py"
-    python3 -c "
-import re, ast, os
-with open('custom/my_test.py') as f:
-    lines = f.readlines()
-# Count @timeout lines before fail_line, then remove them
-fail = $first_fail_line
-removed = sum(1 for l in lines[:max(0,fail-1)] if re.match(r'\s*@timeout\(', l))
-adj_fail = fail - removed if fail > 0 else 0
-cleaned = [l for l in lines if not re.match(r'\s*@timeout\(', l)]
-cleaned = [re.sub(r'signal\.alarm\(\w+\)', 'signal.alarm(0)', l) for l in cleaned]
-# Find test method body and inject set_trace + set_break
-source = ''.join(cleaned)
-tree = ast.parse(source)
-my_test_abs = os.path.abspath('custom/my_test.py')
-for node in ast.walk(tree):
-    if isinstance(node, ast.FunctionDef) and node.name == '$first_fail_method':
-        body_line = node.body[0].lineno - 1
-        indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
-        pad = ' ' * indent
-        if adj_fail > 0:
-            # +1 for the single injected line
-            bp_target = adj_fail + 1
-            inject = pad + 'import pudb; _dbg = pudb._get_debugger(); _dbg.set_break(\"' + my_test_abs + '\", ' + str(bp_target) + '); pudb.set_trace()\n'
-        else:
-            inject = pad + 'import pudb; pudb.set_trace()\n'
-        cleaned.insert(body_line, inject)
-        break
-with open('custom/my_test.py', 'w') as f:
-    f.writelines(cleaned)
-"
-    python3 custom/my_test.py
+    prep_error=$(python3 -c "
+import re, ast, os, sys
+try:
+    with open('custom/my_test.py') as f:
+        lines = f.readlines()
+    # Count @timeout lines before fail_line, then remove them
+    fail = $first_fail_line
+    removed = sum(1 for l in lines[:max(0,fail-1)] if re.match(r'\s*@timeout', l))
+    adj_fail = fail - removed if fail > 0 else 0
+    cleaned = [l for l in lines if not re.match(r'\s*@timeout', l)]
+    cleaned = [re.sub(r'signal\.alarm\([^)]*\)', 'signal.alarm(0)', l) for l in cleaned]
+    # Find test method body and inject set_trace + set_break
+    source = ''.join(cleaned)
+    tree = ast.parse(source)
+    my_test_abs = os.path.abspath('custom/my_test.py')
+    injected = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == '$first_fail_method':
+            body_line = node.body[0].lineno - 1
+            indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
+            pad = ' ' * indent
+            if adj_fail > 0:
+                # +1 for the single injected line
+                bp_target = adj_fail + 1
+                inject = pad + 'import pudb; _dbg = pudb._get_debugger(); _dbg.set_break(\"' + my_test_abs + '\", ' + str(bp_target) + '); pudb.set_trace()\n'
+            else:
+                inject = pad + 'import pudb; pudb.set_trace()\n'
+            cleaned.insert(body_line, inject)
+            injected = True
+            break
+    if not injected:
+        # Fallback: inject pudb.set_trace() at top of file
+        cleaned.insert(0, 'import pudb; pudb.set_trace()\n')
+    with open('custom/my_test.py', 'w') as f:
+        f.writelines(cleaned)
+except Exception as e:
+    print(str(e), file=sys.stderr)
+    sys.exit(1)
+" 2>&1)
+    if [ $? -ne 0 ]; then
+        # Fallback: inject a simple set_trace at the top of the file
+        sed -i '1s/^/import pudb; pudb.set_trace()\n/' custom/my_test.py 2>/dev/null
+    fi
+    # Run the debug session, capturing output to detect instant failures
+    python3 custom/my_test.py 2>&1
+    debug_exit=$?
+    # If python exited non-zero very quickly, it likely never launched PuDB
+    # We detect this by checking if the exit was non-zero (PuDB normal exit is 0)
+    if [ $debug_exit -ne 0 ]; then
+        # Re-run to capture error output for display
+        debug_output=$(python3 custom/my_test.py 2>&1)
+        if [ -n "$debug_output" ]; then
+            last_debug_error="$debug_output"
+        fi
+    fi
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
     draw_screen
