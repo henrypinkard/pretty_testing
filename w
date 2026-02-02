@@ -476,18 +476,40 @@ except Exception as e:
         # Fallback: inject a simple set_trace at the top of the file
         sed -i '1s/^/import pudb; pudb.set_trace()\n/' custom/my_test.py 2>/dev/null
     fi
-    # Run the debug session, capturing output to detect instant failures
-    python3 custom/my_test.py 2>&1
-    debug_exit=$?
-    # If python exited non-zero very quickly, it likely never launched PuDB
-    # We detect this by checking if the exit was non-zero (PuDB normal exit is 0)
-    if [ $debug_exit -ne 0 ]; then
-        # Re-run to capture error output for display
-        debug_output=$(python3 custom/my_test.py 2>&1)
-        if [ -n "$debug_output" ]; then
-            last_debug_error="$debug_output"
-        fi
+    # Pre-flight: run the test non-interactively (without pudb) to check if
+    # setUp/imports succeed. If they don't, pudb.set_trace() inside the test
+    # method will never be reached and the error just flashes and disappears.
+    preflight_output=$(python3 -c "
+import unittest, sys
+# Load the test file's module
+sys.path.insert(0, 'custom')
+import importlib.util
+spec = importlib.util.spec_from_file_location('my_test', 'custom/my_test.py')
+mod = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(mod)
+except Exception as e:
+    print(f'Import error: {e}', file=sys.stderr)
+    sys.exit(1)
+# Find the test class and try to instantiate + setUp
+for name in dir(mod):
+    obj = getattr(mod, name)
+    if isinstance(obj, type) and issubclass(obj, unittest.TestCase) and obj is not unittest.TestCase:
+        instance = obj('$first_fail_method')
+        try:
+            instance.setUp()
+        except Exception as e:
+            print(f'setUp failed: {e}', file=sys.stderr)
+            sys.exit(1)
+        break
+" 2>&1)
+    if [ $? -ne 0 ]; then
+        last_debug_error="Cannot launch debugger — test setup failed:\n\n$preflight_output"
+        draw_screen
+        return
     fi
+    # Pre-flight passed — launch PuDB interactively
+    python3 custom/my_test.py
     # Back to dashboard — rerun tests (file may have changed) and redraw
     run_tests
     draw_screen
