@@ -191,7 +191,7 @@ run_tests() {
 
 # --- 5. UI UPDATE ---
 draw_screen() {
-    printf '\033[2J\033[3J\033[H'
+    printf '\033[2J\033[H'
 
     if [ "$is_syntax_error" = true ]; then
         echo "${bold}Last Run: $(date +"%H:%M:%S")${reset}"
@@ -227,12 +227,12 @@ draw_screen() {
 
     # Help line
     echo ""
-    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  |  run: help${reset}"
+    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  [m] post-mortem  |  run: help${reset}"
 }
 
 # --- 6. MAIN LOOP ---
 trap 'printf "\n"; exit 0' INT TERM
-printf '\033[2J\033[3J\033[H'
+printf '\033[2J\033[H'
 echo "${bold}Starting Test Monitor...${reset}"
 run_tests
 draw_screen
@@ -278,7 +278,36 @@ launch_debugger() {
         fi
     fi
 
+    printf '\033[2J\033[H'
     python3 custom/my_test.py
+
+    run_tests
+    draw_screen
+}
+
+launch_postmortem() {
+    if [ -z "$first_fail_method" ] || [ -z "$first_fail_file" ]; then
+        return
+    fi
+
+    # Generate test file WITHOUT debug_prep (no set_trace, no breakpoints)
+    builder_output=$(python3 "$BUILDER" "$first_fail_file" "$first_fail_method" 2>&1)
+    if [ $? -ne 0 ]; then
+        last_debug_error="Builder failed:\n$builder_output"
+        draw_screen
+        return
+    fi
+
+    # Run inside a wrapper that catches the exception and calls post_mortem
+    printf '\033[2J\033[H'
+    python3 -c "
+import runpy, sys
+sys.argv = ['custom/my_test.py']
+try:
+    runpy.run_path('custom/my_test.py', run_name='__main__')
+except Exception:
+    import pudb; pudb.post_mortem()
+"
 
     run_tests
     draw_screen
@@ -292,6 +321,9 @@ while true; do
             continue
         elif [ "$key" = "p" ]; then
             launch_debugger pdbpp
+            continue
+        elif [ "$key" = "m" ]; then
+            launch_postmortem
             continue
         fi
     fi
