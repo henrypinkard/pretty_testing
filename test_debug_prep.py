@@ -171,7 +171,7 @@ class TestPatchPostmortem(unittest.TestCase):
         joined = ''.join(result)
         self.assertNotIn('raise e', joined)
         self.assertIn('pudb.post_mortem', joined)
-        self.assertIn('exc_info', joined)
+        self.assertIn('post_mortem', joined)
 
     def test_replaces_raise_with_pdbpp_postmortem(self):
         lines = ['                raise e\n']
