@@ -240,5 +240,52 @@ class TestPreflight(unittest.TestCase):
             os.unlink(path)
 
 
+class TestSyntaxCheckPerFile(unittest.TestCase):
+    """Verify that py_compile catches errors in each file independently."""
+
+    def test_second_file_syntax_error_detected(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            # First file: valid
+            with open(os.path.join(d, 'good.py'), 'w') as f:
+                f.write('x = 1\n')
+            # Second file: syntax error
+            with open(os.path.join(d, 'bad.py'), 'w') as f:
+                f.write('def broken(\n')
+
+            # py_compile each file individually (like w does)
+            errors = []
+            for name in sorted(os.listdir(d)):
+                path = os.path.join(d, name)
+                r = subprocess.run(
+                    ['python3', '-m', 'py_compile', path],
+                    capture_output=True, text=True,
+                )
+                if r.returncode != 0:
+                    errors.append(r.stderr)
+
+            self.assertEqual(len(errors), 1)
+            self.assertIn('bad.py', errors[0])
+
+    def test_all_valid_no_errors(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            for name in ['a.py', 'b.py']:
+                with open(os.path.join(d, name), 'w') as f:
+                    f.write('x = 1\n')
+
+            errors = []
+            for name in sorted(os.listdir(d)):
+                path = os.path.join(d, name)
+                r = subprocess.run(
+                    ['python3', '-m', 'py_compile', path],
+                    capture_output=True, text=True,
+                )
+                if r.returncode != 0:
+                    errors.append(r.stderr)
+
+            self.assertEqual(len(errors), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

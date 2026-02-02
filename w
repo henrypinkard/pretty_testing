@@ -51,11 +51,17 @@ run_tests() {
     fi
 
     # B. VALIDATE SOURCE (Fail Fast - Syntax Only)
-    files_to_check=$(find . -maxdepth 1 -name "*.py" -type f; find "$test_source_dir" -name "*.py" -type f)
-    syntax_output=$(python3 -m py_compile $files_to_check 2>&1)
+    syntax_output=""
+    is_syntax_error=false
+    while IFS= read -r pyfile; do
+        result=$(python3 -m py_compile "$pyfile" 2>&1)
+        if [ $? -ne 0 ]; then
+            is_syntax_error=true
+            syntax_output+="$result"$'\n'
+        fi
+    done < <(find . -maxdepth 1 -name "*.py" -type f; find "$test_source_dir" -name "*.py" -type f)
 
-    if [ $? -ne 0 ]; then
-        is_syntax_error=true
+    if [ "$is_syntax_error" = true ]; then
         current_syntax_error="$syntax_output"
         return
     fi

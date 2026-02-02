@@ -4,7 +4,12 @@
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 2. Install dependencies
-pip3 install pudb pdbpp pygments > /dev/null 2>&1 || pip install pudb pdbpp pygments > /dev/null 2>&1
+# Only install if not already present (avoids slow PyPI check)
+python3 -c "import pudb, pdbpp, pygments" 2>/dev/null || {
+    echo "Installing dependencies..."
+    pip3 install "pudb==2025.1.5" pdbpp pygments || \
+    pip install "pudb==2025.1.5" pdbpp pygments
+}
 
 # 3a. Configure pdb++ (sticky mode by default)
 PDBRC="$HOME/.pdbrc.py"
