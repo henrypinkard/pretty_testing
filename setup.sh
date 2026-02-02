@@ -4,7 +4,7 @@
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 2. Install dependencies
-pip3 install pudb pygments > /dev/null 2>&1 || pip install pudb pygments > /dev/null 2>&1
+pip3 install pudb pdbpp pygments > /dev/null 2>&1 || pip install pudb pdbpp pygments > /dev/null 2>&1
 
 # 3. Configure PuDB (custom Darcula theme, skip welcome screen)
 PUDB_CONFIG_DIR="$HOME/.config/pudb"
@@ -40,6 +40,8 @@ fi
 
 # 4. Make binaries executable
 chmod +x "$KIT_ROOT/w"
+chmod +x "$KIT_ROOT/help"
+chmod +x "$KIT_ROOT/dbg"
 
 # 5. Detect which shell config file to use (Zsh vs Bash)
 if [ -f "$HOME/.zshrc" ]; then
@@ -74,11 +76,21 @@ if ! grep -q "alias d=" "$SHELL_CONFIG"; then
     echo "alias d='python3 -m IPython --pdb $KIT_ROOT/custom/my_test.py'" >> "$SHELL_CONFIG"
 fi
 
+if ! grep -q "alias h=" "$SHELL_CONFIG"; then
+    echo "alias h='$KIT_ROOT/help'" >> "$SHELL_CONFIG"
+fi
+
+if ! grep -q "alias dbg=" "$SHELL_CONFIG"; then
+    echo "alias dbg='$KIT_ROOT/dbg'" >> "$SHELL_CONFIG"
+fi
+
 # 7. Also set them for the CURRENT session so they work right now
 alias t="$KIT_ROOT/t"
 alias w="$KIT_ROOT/w"
 alias da="$KIT_ROOT/da"
 alias d="python3 -m IPython --pdb $KIT_ROOT/custom/my_test.py"
+alias h="$KIT_ROOT/help"
+alias dbg="$KIT_ROOT/dbg"
 
 echo "Debug Kit Loaded!"
 echo "Run 'w' to watch"
