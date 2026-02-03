@@ -6,6 +6,20 @@ OUTPUT_PARSER="$REPO_ROOT/output_parser.py"
 DEBUG_PREP="$REPO_ROOT/debug_prep.py"
 mkdir -p custom
 
+# --- 0. PARSE ARGS ---
+STOP_ON_FIRST=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --stop-on-first|-f)
+            STOP_ON_FIRST=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
 # --- 1. SETUP SAFE BUILDER ---
 cat "$BUILDER" \
   | sed "s/my_/watch_/g" \
@@ -33,6 +47,8 @@ first_fail_file=""
 last_debugged_method=""
 first_fail_line=0
 last_debug_error=""
+user_error_file=""
+user_error_line=0
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 
 # --- 4. CORE FUNCTION ---
@@ -84,14 +100,36 @@ run_tests() {
     failed_methods=()
     failed_files=()
 
-    # E. RUN SWEEP
+    # E. RUN SWEEP (stop after first file with failures)
+    stop_after_this_file=false
+    progress_log=""
     for watch_file in $(ls custom/watch_*.py 2>/dev/null | sort -V); do
         file_label=$(basename "$watch_file" .py | sed 's/watch_//')
-        new_buffer+=$'\n'"${bold}File: ${file_label}${reset}"$'\n'
+        file_start=$(date +%s)
 
-        has_tests_in_level=false
+        # Show progress with live timer (runs in background, updates every 100ms)
+        (
+            while true; do
+                elapsed=$(($(date +%s) - file_start))
+                printf '\033[2J\033[H%s\n%s' "$progress_log" "${dim}Running ${file_label}... ${elapsed}s${reset}"
+                sleep 0.1
+            done
+        ) &
+        timer_pid=$!
 
         raw_output=$(python3 "$watch_file" 2>&1)
+
+        # Stop the timer
+        kill $timer_pid 2>/dev/null
+        wait $timer_pid 2>/dev/null
+
+        file_end=$(date +%s)
+        file_elapsed=$((file_end - file_start))
+        progress_log+="${dim}${file_label}: ${file_elapsed}s${reset}"$'\n'
+
+        new_buffer+=$'\n'"${bold}File: ${file_label}${reset} ${dim}(${file_elapsed}s)${reset}"$'\n'
+
+        has_tests_in_level=false
 
         while IFS= read -r line; do
              if [[ "$line" == "passed:"* ]]; then
@@ -104,12 +142,17 @@ run_tests() {
                  new_buffer+="  [${red}FAIL${reset}] $test_name"$'\n'
                  has_tests_in_level=true
                  failed_methods+=("$test_name")
+                 stop_after_this_file=true
                  if [ -z "$first_fail_method" ]; then
                      first_fail_method="$test_name"
                  fi
                  fail_src="$test_source_dir/${file_label}.py"
                  if [ -f "$fail_src" ]; then
                      failed_files+=("$(cd "$(dirname "$fail_src")" && pwd)/$(basename "$fail_src")")
+                 fi
+                 # With --stop-on-first, don't process remaining test results
+                 if [ "$STOP_ON_FIRST" = true ]; then
+                     break
                  fi
              elif [[ "$line" == "skipped:"* ]]; then
                  test_name=$(echo "$line" | cut -d' ' -f2)
@@ -127,6 +170,11 @@ run_tests() {
                  return
             fi
         fi
+
+        # Stop processing more files if this file had failures
+        if [ "$stop_after_this_file" = true ]; then
+            break
+        fi
     done
 
     # F. DEEP DIVE (Only if valid failure found)
@@ -138,11 +186,21 @@ run_tests() {
             first_fail_file="$orig_file"
             python3 "$BUILDER" "$orig_file" "$first_fail_method" > /dev/null 2>&1
 
-            # 1. GET FAIL LINE
+            # 1. GET FAIL LINE (in test) AND USER ERROR LOCATION (in user code)
             err_out=$(python3 custom/my_test.py 2>&1)
             fail_line=$(echo "$err_out" | grep -P "File \".*custom/my_test.py\", line \d+, in $first_fail_method" | tail -n 1 | grep -oP 'line \K\d+')
             if [ -z "$fail_line" ]; then fail_line=0; fi
             first_fail_line="$fail_line"
+
+            # Extract user code error location (file:line where exception originated)
+            user_error_loc=$(echo "$err_out" | python3 "$OUTPUT_PARSER" user-error-loc "custom/my_test.py" 2>/dev/null)
+            if [ -n "$user_error_loc" ]; then
+                user_error_file=$(echo "$user_error_loc" | cut -d: -f1)
+                user_error_line=$(echo "$user_error_loc" | cut -d: -f2)
+            else
+                user_error_file=""
+                user_error_line=0
+            fi
 
             # 2. EXTRACT SOURCE
             source_and_error=$(python3 "$OUTPUT_PARSER" source custom/my_test.py "$first_fail_method" "$fail_line" 2>/dev/null || echo "(source extraction failed)")
@@ -270,10 +328,11 @@ launch_debugger() {
     fi
 
     # Prepare debug version (prep + preflight + setUp fallback in one step)
-    python3 "$DEBUG_PREP" debug custom/my_test.py \
-        --method "$first_fail_method" \
-        --fail-line "$first_fail_line" \
-        --debugger "$debugger" 2>/dev/null
+    debug_args=(debug custom/my_test.py --method "$first_fail_method" --fail-line "$first_fail_line" --debugger "$debugger")
+    if [ -n "$user_error_file" ] && [ "$user_error_line" -gt 0 ]; then
+        debug_args+=(--user-error-file "$user_error_file" --user-error-line "$user_error_line")
+    fi
+    python3 "$DEBUG_PREP" "${debug_args[@]}" 2>/dev/null
 
     if [ $? -ne 0 ]; then
         # Last resort: inject a simple set_trace at top

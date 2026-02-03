@@ -24,20 +24,29 @@ def neutralize_alarms(lines):
     return [re.sub(r'signal\.alarm\([^)]*\)', 'signal.alarm(0)', l) for l in lines]
 
 
-def _trace_line(debugger, abs_path=None, bp_target=None):
+def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, user_error_line=None):
     """Return the set_trace injection string (no indent, no newline)."""
     if debugger == 'pdbpp':
         sticky = "hasattr(pdb,'DefaultConfig') and setattr(pdb.DefaultConfig,'sticky_by_default',True); "
+        parts = [f'import pdb; {sticky}_dbg = pdb.Pdb()']
         if bp_target and abs_path:
-            return f'import pdb; {sticky}_dbg = pdb.Pdb(); _dbg.set_break("{abs_path}", {bp_target}); pdb.set_trace()'
-        return f'import pdb; {sticky}pdb.set_trace()'
+            parts.append(f'_dbg.set_break("{abs_path}", {bp_target})')
+        if user_error_file and user_error_line:
+            parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        parts.append('pdb.set_trace()')
+        return '; '.join(parts)
     else:
+        parts = ['import pudb; _dbg = pudb._get_debugger()']
         if bp_target and abs_path:
-            return f'import pudb; _dbg = pudb._get_debugger(); _dbg.set_break("{abs_path}", {bp_target}); pudb.set_trace()'
-        return 'import pudb; pudb.set_trace()'
+            parts.append(f'_dbg.set_break("{abs_path}", {bp_target})')
+        if user_error_file and user_error_line:
+            parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        parts.append('pudb.set_trace()')
+        return '; '.join(parts)
 
 
-def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb'):
+def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb',
+                     user_error_file=None, user_error_line=None):
     """Inject set_trace (and optionally set_break) at the start of the given method body.
 
     Returns modified lines list.
@@ -59,12 +68,12 @@ def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb')
             indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
             pad = ' ' * indent
             bp_target = adj_fail + 1 if adj_fail > 0 else None
-            trace = _trace_line(debugger, abs_path, bp_target)
+            trace = _trace_line(debugger, abs_path, bp_target, user_error_file, user_error_line)
             cleaned.insert(body_line, pad + trace + '\n')
             return cleaned
 
     # Fallback: method not found, inject at top
-    trace = _trace_line(debugger)
+    trace = _trace_line(debugger, user_error_file=user_error_file, user_error_line=user_error_line)
     cleaned.insert(0, trace + '\n')
     return cleaned
 
@@ -147,7 +156,8 @@ def run_preflight(file_path, method):
     return True, ''
 
 
-def full_debug_prep(file_path, method, fail_line=0, debugger='pudb'):
+def full_debug_prep(file_path, method, fail_line=0, debugger='pudb',
+                    user_error_file=None, user_error_line=None):
     """All-in-one: prep the file, preflight, fall back to setUp injection if needed.
 
     This is the single entry point for both `w` and manual use.
@@ -155,7 +165,8 @@ def full_debug_prep(file_path, method, fail_line=0, debugger='pudb'):
     with open(file_path) as f:
         original_lines = f.readlines()
     abs_path = os.path.abspath(file_path)
-    result = inject_set_trace(original_lines, method, fail_line, abs_path, debugger)
+    result = inject_set_trace(original_lines, method, fail_line, abs_path, debugger,
+                              user_error_file, user_error_line)
     result = patch_postmortem(result, debugger)
     with open(file_path, 'w') as f:
         f.writelines(result)
@@ -182,6 +193,8 @@ def main():
     p_debug.add_argument('--method', required=True)
     p_debug.add_argument('--fail-line', type=int, default=0)
     p_debug.add_argument('--debugger', choices=['pudb', 'pdbpp'], default='pudb')
+    p_debug.add_argument('--user-error-file', default=None, help='File where user code error originated')
+    p_debug.add_argument('--user-error-line', type=int, default=0, help='Line in user code where error originated')
 
     # Individual commands (still available for testing / granular use)
     p_prep = sub.add_parser('prep')
@@ -201,7 +214,10 @@ def main():
     args = parser.parse_args()
 
     if args.command == 'debug':
-        full_debug_prep(args.file, args.method, args.fail_line, args.debugger)
+        user_file = args.user_error_file if args.user_error_file else None
+        user_line = args.user_error_line if args.user_error_line else None
+        full_debug_prep(args.file, args.method, args.fail_line, args.debugger,
+                        user_file, user_line)
 
     elif args.command == 'prep':
         with open(args.file) as f:

@@ -176,6 +176,32 @@ def colorize_syntax(text):
     return text
 
 
+def extract_user_error_location(text, test_file):
+    """Extract file:line from traceback for the deepest frame NOT in test_file or stdlib.
+
+    Returns (file_path, line_number) or (None, None) if not found.
+    """
+    # Parse traceback frames: File "path", line N
+    frame_pattern = re.compile(r'File "([^"]+)", line (\d+)')
+    frames = frame_pattern.findall(text)
+
+    # Filter to user code: not test file, not stdlib, not site-packages
+    user_frames = []
+    for path, lineno in frames:
+        if test_file and os.path.basename(path) == os.path.basename(test_file):
+            continue
+        if '/lib/python' in path or 'site-packages' in path:
+            continue
+        if path.startswith('<'):  # <string>, <frozen>, etc.
+            continue
+        user_frames.append((path, int(lineno)))
+
+    # Return the deepest (last) user frame
+    if user_frames:
+        return user_frames[-1]
+    return None, None
+
+
 def main():
     if len(sys.argv) < 2:
         print('Usage: output_parser.py {crash|source|trace|error|syntax}', file=sys.stderr)
@@ -185,6 +211,14 @@ def main():
 
     if cmd == 'crash':
         print(colorize_crash(sys.stdin.read()))
+    elif cmd == 'user-error-loc':
+        # Usage: output_parser.py user-error-loc TEST_FILE < traceback
+        test_file = sys.argv[2] if len(sys.argv) > 2 else None
+        path, line = extract_user_error_location(sys.stdin.read(), test_file)
+        if path and line:
+            print(f'{path}:{line}')
+        else:
+            print('')
     elif cmd == 'source':
         if len(sys.argv) < 5:
             print('Usage: output_parser.py source FILE METHOD FAIL_LINE', file=sys.stderr)
