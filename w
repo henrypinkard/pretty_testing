@@ -52,7 +52,8 @@ user_error_file=""
 user_error_line=0
 last_user_error_file=""
 last_user_error_line=0
-just_debugged_method=""  # Set after debug session, cleared after first display
+declare -a pre_debug_failures=()  # Methods that were failing before debug session
+declare -a highlight_methods=()   # Methods to highlight after debug session
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 
 # --- 4. CORE FUNCTION ---
@@ -141,13 +142,22 @@ run_tests() {
         # Initial display for this file
         redraw_progress
 
+        # Helper to check if method should be highlighted
+        should_highlight() {
+            local method="$1"
+            for hm in "${highlight_methods[@]}"; do
+                [ "$hm" = "$method" ] && return 0
+            done
+            return 1
+        }
+
         # Stream output line by line for real-time display
         while IFS= read -r line; do
             raw_output+="$line"$'\n'
             if [[ "$line" == "passed:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                # Show arrow if this was the just-debugged method that now passes
-                if [ "$test_name" = "$just_debugged_method" ]; then
+                # Show arrow if this was a previously-failing method that now passes
+                if should_highlight "$test_name"; then
                     file_tests[$file_label]+="${bold}${green}→ [PASS] $test_name${reset}"$'\n'
                 else
                     file_tests[$file_label]+="  [${green}PASS${reset}] $test_name"$'\n'
@@ -157,8 +167,8 @@ run_tests() {
                 redraw_progress
             elif [[ "$line" == "FAILED_METHOD:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                # Show arrow if this was the just-debugged method (still failing)
-                if [ "$test_name" = "$just_debugged_method" ]; then
+                # Show arrow if this was a method we were tracking (still failing)
+                if should_highlight "$test_name"; then
                     file_tests[$file_label]+="${bold}${red}→ [FAIL] $test_name${reset}"$'\n'
                 else
                     file_tests[$file_label]+="  [${red}FAIL${reset}] $test_name"$'\n'
@@ -362,6 +372,9 @@ launch_debugger() {
     fi
     last_debug_error=""
 
+    # Capture all currently failing methods to highlight after debug session
+    pre_debug_failures=("${failed_methods[@]}")
+
     if [ "$debugger" = "pudb" ]; then
         # Fix theme in pudb config in case it got wiped by prefs save
         PUDB_CFG="$HOME/.config/pudb/pudb.cfg"
@@ -403,12 +416,12 @@ launch_debugger() {
     printf '\033[2J\033[3J\033[H'
     python3 custom/debug_this_test.py
 
-    # Track which method was just debugged for visual feedback
-    just_debugged_method="$first_fail_method"
+    # Highlight all methods that were failing before debug session
+    highlight_methods=("${pre_debug_failures[@]}")
     run_tests
     draw_screen
-    # Clear after displaying once
-    just_debugged_method=""
+    # Clear highlights after displaying once
+    highlight_methods=()
 }
 
 
@@ -432,7 +445,8 @@ while true; do
             continue
         fi
     fi
-    current_checksum=$(find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec md5sum {} + 2>/dev/null | md5sum)
+    # Only watch: root-level *.py files + test_source_dir/*.py (not tool files, not custom/)
+    current_checksum=$( (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} +; find "$test_source_dir" -name "*.py" -type f -exec md5sum {} +) 2>/dev/null | sort | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
         if [ -n "$last_checksum" ]; then
             debug_log "Checksum changed - refreshing"
@@ -440,7 +454,7 @@ while true; do
             debug_log "  New: $current_checksum"
             # Log which files changed
             debug_log "  Files checked:"
-            find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec md5sum {} + 2>/dev/null >> "$DEBUG_LOG"
+            (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} +; find "$test_source_dir" -name "*.py" -type f -exec md5sum {} +) 2>/dev/null >> "$DEBUG_LOG"
             run_tests
             draw_screen
         else
