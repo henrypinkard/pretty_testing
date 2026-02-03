@@ -389,6 +389,10 @@ launch_debugger() {
     last_user_error_file="$user_error_file"
     last_user_error_line="$user_error_line"
 
+    # Show launching message
+    printf '\033[2J\033[H'
+    echo "${dim}Launching $debugger for $first_fail_method...${reset}"
+
     # Generate single-method test file
     builder_output=$(python3 "$BUILDER" "$first_fail_file" "$first_fail_method" 2>&1)
     if [ $? -ne 0 ]; then
@@ -452,15 +456,16 @@ while true; do
         watch_dir="tests"
     fi
     # Only watch: root-level *.py files + watch_dir/*.py (not tool files, not custom/)
-    current_checksum=$( (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} + 2>/dev/null; find "$watch_dir" -name "*.py" -type f -exec md5sum {} + 2>/dev/null) | sort | md5sum)
+    # Sort by filename (column 2) to ensure consistent ordering
+    current_checksum=$( (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} + 2>/dev/null; find "$watch_dir" -name "*.py" -type f -exec md5sum {} + 2>/dev/null) | sort -k2 | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
         if [ -n "$last_checksum" ]; then
             debug_log "Checksum changed - refreshing (watch_dir=$watch_dir)"
             debug_log "  Old: $last_checksum"
             debug_log "  New: $current_checksum"
-            # Log which files changed (sorted for comparison)
-            debug_log "  Files checked (sorted):"
-            (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} + 2>/dev/null; find "$watch_dir" -name "*.py" -type f -exec md5sum {} + 2>/dev/null) | sort >> "$DEBUG_LOG"
+            # Log which files changed (sorted by filename)
+            debug_log "  Files checked (sorted by name):"
+            (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} + 2>/dev/null; find "$watch_dir" -name "*.py" -type f -exec md5sum {} + 2>/dev/null) | sort -k2 >> "$DEBUG_LOG"
             run_tests
             draw_screen
         else
