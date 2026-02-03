@@ -22,7 +22,8 @@ done
 
 # --- 1. SETUP SAFE BUILDER ---
 cat "$BUILDER" \
-  | sed "s/my_/watch_/g" \
+  | sed "s/debug_this_test_/watch_/g" \
+  | sed "s/debug_this_test\\.py/watch_.py/g" \
   | sed "s/raise e/pass/g" \
   > custom/make_watch_test.py
 

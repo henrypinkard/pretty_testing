@@ -470,5 +470,100 @@ class TestUnittestPatterns(unittest.TestCase):
         self.assertIn('passed: test_known_broken', r.stdout)
 
 
+class TestWatchFileGeneration(unittest.TestCase):
+    """Test that watch_*.py files are generated correctly for w script."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.custom_dir = os.path.join(self.tmpdir, 'custom')
+        os.makedirs(self.custom_dir)
+        self.tests_dir = os.path.join(self.tmpdir, 'tests')
+        os.makedirs(self.tests_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir)
+
+    def _create_watch_generator(self):
+        """Create the watch version of test_generator (as w script does)."""
+        generator_path = os.path.join(REPO_ROOT, 'test_generator.py')
+        with open(generator_path) as f:
+            content = f.read()
+        # Apply same transformations as w script
+        content = content.replace('debug_this_test_', 'watch_')
+        content = content.replace('debug_this_test.py', 'watch_.py')
+        content = content.replace('raise e', 'pass')
+        watch_gen_path = os.path.join(self.custom_dir, 'make_watch_test.py')
+        with open(watch_gen_path, 'w') as f:
+            f.write(content)
+        return watch_gen_path
+
+    def test_watch_generator_produces_watch_files(self):
+        """Verify watch generator creates watch_*.py files that run."""
+        # Create a test file
+        test_path = os.path.join(self.tests_dir, 'test_example.py')
+        with open(test_path, 'w') as f:
+            f.write(textwrap.dedent("""\
+                import unittest
+                class TestExample(unittest.TestCase):
+                    def test_one(self):
+                        self.assertEqual(1, 1)
+                    def test_two(self):
+                        self.assertEqual(2, 2)
+            """))
+
+        watch_gen = self._create_watch_generator()
+
+        # Run the watch generator
+        r = subprocess.run(
+            [sys.executable, watch_gen, test_path],
+            capture_output=True, text=True, cwd=self.tmpdir
+        )
+
+        # Should produce watch_test_example.py
+        watch_file = os.path.join(self.custom_dir, 'watch_test_example.py')
+        self.assertTrue(os.path.exists(watch_file),
+                        f"Expected {watch_file} to exist. Generator output: {r.stdout} {r.stderr}")
+
+        # Run the watch file and verify it produces output
+        r2 = subprocess.run(
+            [sys.executable, watch_file],
+            capture_output=True, text=True, cwd=self.tmpdir
+        )
+        self.assertIn('passed: test_one', r2.stdout)
+        self.assertIn('passed: test_two', r2.stdout)
+
+    def test_watch_generator_weird_filename(self):
+        """Verify watch generator handles non-standard filenames."""
+        # Create a test file with weird name (no test_ prefix, CamelCase)
+        test_path = os.path.join(self.tests_dir, 'MyWeirdTest.py')
+        with open(test_path, 'w') as f:
+            f.write(textwrap.dedent("""\
+                import unittest
+                class MyWeirdTest(unittest.TestCase):
+                    def test_works(self):
+                        self.assertTrue(True)
+            """))
+
+        watch_gen = self._create_watch_generator()
+
+        # Run the watch generator
+        r = subprocess.run(
+            [sys.executable, watch_gen, test_path],
+            capture_output=True, text=True, cwd=self.tmpdir
+        )
+
+        # Should produce watch_MyWeirdTest.py
+        watch_file = os.path.join(self.custom_dir, 'watch_MyWeirdTest.py')
+        self.assertTrue(os.path.exists(watch_file),
+                        f"Expected {watch_file} to exist. Generator output: {r.stdout} {r.stderr}")
+
+        # Run and verify
+        r2 = subprocess.run(
+            [sys.executable, watch_file],
+            capture_output=True, text=True, cwd=self.tmpdir
+        )
+        self.assertIn('passed: test_works', r2.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()
