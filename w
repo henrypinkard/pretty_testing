@@ -105,34 +105,46 @@ run_tests() {
 
     # E. RUN SWEEP (stop after first file with failures) - real-time output
     stop_after_this_file=false
+    declare -A file_times
+    declare -a file_order
+    declare -A file_tests
+
     for watch_file in $(ls custom/watch_*.py 2>/dev/null | sort -V); do
         file_label=$(basename "$watch_file" .py | sed 's/watch_//')
+        file_order+=("$file_label")
         file_start=$(date +%s)
-
-        # Print file header immediately
-        new_buffer+=$'\n'"${bold}File: ${file_label}${reset}"$'\n'
-        printf '\033[2J\033[H'
-        echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
-        echo -e "$new_buffer"
+        file_tests[$file_label]=""
 
         has_tests_in_level=false
         raw_output=""
+
+        # Helper to redraw screen with current state
+        redraw_progress() {
+            printf '\033[2J\033[H'
+            echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+            for fl in "${file_order[@]}"; do
+                local ftime="${file_times[$fl]:-...}"
+                echo ""
+                echo "${bold}File: ${fl}${reset} ${dim}(${ftime})${reset}"
+                echo -e "${file_tests[$fl]}"
+            done
+        }
+
+        # Initial display for this file
+        redraw_progress
 
         # Stream output line by line for real-time display
         while IFS= read -r line; do
             raw_output+="$line"$'\n'
             if [[ "$line" == "passed:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                new_buffer+="  [${green}PASS${reset}] $test_name"$'\n'
+                file_tests[$file_label]+="  [${green}PASS${reset}] $test_name"$'\n'
                 has_tests_in_level=true
                 passed_methods+=("$test_name")
-                # Redraw
-                printf '\033[2J\033[H'
-                echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
-                echo -e "$new_buffer"
+                redraw_progress
             elif [[ "$line" == "FAILED_METHOD:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                new_buffer+="  [${red}FAIL${reset}] $test_name"$'\n'
+                file_tests[$file_label]+="  [${red}FAIL${reset}] $test_name"$'\n'
                 has_tests_in_level=true
                 failed_methods+=("$test_name")
                 stop_after_this_file=true
@@ -143,36 +155,28 @@ run_tests() {
                 if [ -f "$fail_src" ]; then
                     failed_files+=("$(cd "$(dirname "$fail_src")" && pwd)/$(basename "$fail_src")")
                 fi
-                # Redraw
-                printf '\033[2J\033[H'
-                echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
-                echo -e "$new_buffer"
-                # With --stop-on-first, stop reading more output
+                redraw_progress
                 if [ "$STOP_ON_FIRST" = true ]; then
                     break
                 fi
             elif [[ "$line" == "skipped:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                new_buffer+="  [${dim}SKIP${reset}] $test_name"$'\n'
+                file_tests[$file_label]+="  [${dim}SKIP${reset}] $test_name"$'\n'
                 has_tests_in_level=true
-                # Redraw
-                printf '\033[2J\033[H'
-                echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
-                echo -e "$new_buffer"
+                redraw_progress
             elif [[ "$line" == "NO_TESTS_FOUND_IN_FILE" ]]; then
-                new_buffer+="  [${yellow}WARNING${reset}] No methods starting with 'test_' found."$'\n'
-                # Redraw
-                printf '\033[2J\033[H'
-                echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
-                echo -e "$new_buffer"
+                file_tests[$file_label]+="  [${yellow}WARNING${reset}] No methods starting with 'test_' found."$'\n'
+                redraw_progress
             fi
         done < <(python3 "$watch_file" 2>&1)
 
-        # Update file header with elapsed time
+        # Record elapsed time
         file_end=$(date +%s)
         file_elapsed=$((file_end - file_start))
-        # Replace the file header line in buffer with one that includes time
-        new_buffer=$(echo "$new_buffer" | sed "s/${bold}File: ${file_label}${reset}/${bold}File: ${file_label}${reset} ${dim}(${file_elapsed}s)${reset}/")
+        file_times[$file_label]="${file_elapsed}s"
+
+        # Final redraw with timing
+        redraw_progress
 
         # CRASH DETECTION
         if [ "$has_tests_in_level" = false ]; then
@@ -186,6 +190,14 @@ run_tests() {
         if [ "$stop_after_this_file" = true ]; then
             break
         fi
+    done
+
+    # Build final buffer for draw_screen
+    new_buffer=""
+    for fl in "${file_order[@]}"; do
+        local ftime="${file_times[$fl]:-}"
+        new_buffer+=$'\n'"${bold}File: ${fl}${reset} ${dim}(${ftime})${reset}"$'\n'
+        new_buffer+="${file_tests[$fl]}"
     done
 
     # F. DEEP DIVE (Only if valid failure found)
