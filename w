@@ -456,8 +456,9 @@ while true; do
         watch_dir="tests"
     fi
     # Only watch: root-level *.py files + watch_dir/*.py (not tool files, not custom/)
-    # Sort by filename (column 2) to ensure consistent ordering
-    current_checksum=$( (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} + 2>/dev/null; find "$watch_dir" -name "*.py" -type f -exec md5sum {} + 2>/dev/null) | sort -k2 | md5sum)
+    # Use find -print0 + xargs for consistent ordering, sort by full path
+    watched_files=$(find . -maxdepth 1 -name "*.py" -type f 2>/dev/null; find "$watch_dir" -name "*.py" -type f 2>/dev/null)
+    current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
         if [ -n "$last_checksum" ]; then
             debug_log "Checksum changed - refreshing (watch_dir=$watch_dir)"
@@ -465,7 +466,7 @@ while true; do
             debug_log "  New: $current_checksum"
             # Log which files changed (sorted by filename)
             debug_log "  Files checked (sorted by name):"
-            (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} + 2>/dev/null; find "$watch_dir" -name "*.py" -type f -exec md5sum {} + 2>/dev/null) | sort -k2 >> "$DEBUG_LOG"
+            echo "$watched_files" | sort | xargs md5sum 2>/dev/null >> "$DEBUG_LOG"
             run_tests
             draw_screen
         else
