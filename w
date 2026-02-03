@@ -50,17 +50,19 @@ first_fail_line=0
 last_debug_error=""
 user_error_file=""
 user_error_line=0
-last_user_error_file=""
-last_user_error_line=0
-declare -a pre_debug_failures=()  # Methods that were failing before debug session
-declare -a highlight_methods=()   # Methods to highlight after debug session
+# Track previous test results to detect status changes
+declare -A prev_test_status=()  # test_name -> "pass" or "fail"
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+last_debugged_method=""
 
 # --- 4. CORE FUNCTION ---
 run_tests() {
     # RESET ERRORS
     current_runtime_error=""
     last_debug_error=""
+
+    # Track current run's test status (will become prev_test_status after this run)
+    declare -A cur_test_status=()
 
     # A. SELECT SOURCE
     if [ -d "custom_tests" ] && ls custom_tests/*.py >/dev/null 2>&1; then
@@ -142,37 +144,30 @@ run_tests() {
         # Initial display for this file
         redraw_progress
 
-        # Helper to check if method should be highlighted
-        should_highlight() {
-            local method="$1"
-            for hm in "${highlight_methods[@]}"; do
-                [ "$hm" = "$method" ] && return 0
-            done
-            return 1
-        }
-
         # Stream output line by line for real-time display
         while IFS= read -r line; do
             raw_output+="$line"$'\n'
             if [[ "$line" == "passed:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                # Show arrow if this was a previously-failing method that now passes
-                if should_highlight "$test_name"; then
+                # Highlight if status changed from fail to pass
+                if [ "${prev_test_status[$test_name]}" = "fail" ]; then
                     file_tests[$file_label]+="${bold}${green}→ [PASS] $test_name${reset}"$'\n'
                 else
                     file_tests[$file_label]+="  [${green}PASS${reset}] $test_name"$'\n'
                 fi
+                cur_test_status[$test_name]="pass"
                 has_tests_in_level=true
                 passed_methods+=("$test_name")
                 redraw_progress
             elif [[ "$line" == "FAILED_METHOD:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                # Show arrow if this was a method we were tracking (still failing)
-                if should_highlight "$test_name"; then
+                # Highlight if status changed from pass to fail
+                if [ "${prev_test_status[$test_name]}" = "pass" ]; then
                     file_tests[$file_label]+="${bold}${red}→ [FAIL] $test_name${reset}"$'\n'
                 else
                     file_tests[$file_label]+="  [${red}FAIL${reset}] $test_name"$'\n'
                 fi
+                cur_test_status[$test_name]="fail"
                 has_tests_in_level=true
                 failed_methods+=("$test_name")
                 stop_after_this_file=true
@@ -296,28 +291,20 @@ run_tests() {
                 break
             fi
         done
-        debug_log "Breakpoint cleanup: method=$last_debugged_method still_failing=$method_still_failing"
-        debug_log "  last_user_error_file=$last_user_error_file line=$last_user_error_line"
-        debug_log "  PUDB_BP_FILE contents before:"
-        cat "$PUDB_BP_FILE" >> "$DEBUG_LOG" 2>/dev/null
         if [ "$method_still_failing" = false ]; then
             # Remove breakpoints from the test file
             grep -v "custom/debug_this_test.py" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
-            # Also remove breakpoints from the user code file if we set one there
-            if [ -n "$last_user_error_file" ] && [ "$last_user_error_line" -gt 0 ]; then
-                debug_log "  Removing user breakpoint: $last_user_error_file:$last_user_error_line"
-                grep -v "${last_user_error_file}:${last_user_error_line}" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
-                last_user_error_file=""
-                last_user_error_line=0
-            fi
             last_debugged_method=""
-            debug_log "  PUDB_BP_FILE contents after:"
-            cat "$PUDB_BP_FILE" >> "$DEBUG_LOG" 2>/dev/null
         fi
     fi
 
     last_valid_buffer="$new_buffer"
     last_valid_detail="$new_detail"
+
+    # Update previous test status for next run's comparison
+    for key in "${!cur_test_status[@]}"; do
+        prev_test_status[$key]="${cur_test_status[$key]}"
+    done
 }
 
 # --- 5. UI UPDATE ---
@@ -381,9 +368,6 @@ launch_debugger() {
     fi
     last_debug_error=""
 
-    # Capture all currently failing methods to highlight after debug session
-    pre_debug_failures=("${failed_methods[@]}")
-
     if [ "$debugger" = "pudb" ]; then
         # Fix theme in pudb config in case it got wiped by prefs save
         PUDB_CFG="$HOME/.config/pudb/pudb.cfg"
@@ -394,9 +378,6 @@ launch_debugger() {
     fi
 
     last_debugged_method="$first_fail_method"
-    # Track user error location for cleanup later
-    last_user_error_file="$user_error_file"
-    last_user_error_line="$user_error_line"
 
     # Show launching message
     printf '\033[2J\033[H'
@@ -429,15 +410,11 @@ launch_debugger() {
     printf '\033[2J\033[3J\033[H'
     python3 custom/debug_this_test.py
 
-    # Highlight all methods that were failing before debug session
-    highlight_methods=("${pre_debug_failures[@]}")
     run_tests
     draw_screen
-    # Clear highlights after displaying once
-    highlight_methods=()
 
     # Update checksum to current state so edits made during debugging
-    # don't trigger an immediate refresh that clears the highlights
+    # don't trigger an immediate refresh
     if [ -d "custom_tests" ] && ls custom_tests/*.py >/dev/null 2>&1; then
         watch_dir="custom_tests"
     else
