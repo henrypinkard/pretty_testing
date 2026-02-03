@@ -445,20 +445,26 @@ while true; do
             continue
         fi
     fi
-    # Only watch: root-level *.py files + test_source_dir/*.py (not tool files, not custom/)
-    current_checksum=$( (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} +; find "$test_source_dir" -name "*.py" -type f -exec md5sum {} +) 2>/dev/null | sort | md5sum)
+    # Determine test source dir for checksum (same logic as run_tests)
+    if [ -d "custom_tests" ] && ls custom_tests/*.py >/dev/null 2>&1; then
+        watch_dir="custom_tests"
+    else
+        watch_dir="tests"
+    fi
+    # Only watch: root-level *.py files + watch_dir/*.py (not tool files, not custom/)
+    current_checksum=$( (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} + 2>/dev/null; find "$watch_dir" -name "*.py" -type f -exec md5sum {} + 2>/dev/null) | sort | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
         if [ -n "$last_checksum" ]; then
-            debug_log "Checksum changed - refreshing"
+            debug_log "Checksum changed - refreshing (watch_dir=$watch_dir)"
             debug_log "  Old: $last_checksum"
             debug_log "  New: $current_checksum"
-            # Log which files changed
-            debug_log "  Files checked:"
-            (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} +; find "$test_source_dir" -name "*.py" -type f -exec md5sum {} +) 2>/dev/null >> "$DEBUG_LOG"
+            # Log which files changed (sorted for comparison)
+            debug_log "  Files checked (sorted):"
+            (find . -maxdepth 1 -name "*.py" -type f -exec md5sum {} + 2>/dev/null; find "$watch_dir" -name "*.py" -type f -exec md5sum {} + 2>/dev/null) | sort >> "$DEBUG_LOG"
             run_tests
             draw_screen
         else
-            debug_log "Initial checksum set: $current_checksum"
+            debug_log "Initial checksum set (watch_dir=$watch_dir): $current_checksum"
         fi
         last_checksum="$current_checksum"
     fi
