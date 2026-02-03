@@ -27,7 +27,7 @@ mkdir -p "$PUDB_CONFIG_DIR"
 if [ ! -f "$PUDB_CONFIG_DIR/pudb.cfg" ]; then
     cat > "$PUDB_CONFIG_DIR/pudb.cfg" << PUDBCFG
 [pudb]
-breakpoints_weight = 1
+breakpoints_weight = 0.2
 current_stack_frame = bottom
 custom_shell =
 custom_stringifier =
@@ -45,7 +45,7 @@ prompt_on_quit = True
 seen_welcome = e056
 shell = internal
 sidebar_width = 0.5
-stack_weight = 1
+stack_weight = 0.32768
 stringifier = default
 theme = $KIT_ROOT/darcula.py
 variables_weight = 1
