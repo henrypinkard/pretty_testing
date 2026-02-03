@@ -52,6 +52,7 @@ user_error_file=""
 user_error_line=0
 last_user_error_file=""
 last_user_error_line=0
+just_debugged_method=""  # Set after debug session, cleared after first display
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 
 # --- 4. CORE FUNCTION ---
@@ -112,22 +113,29 @@ run_tests() {
     for watch_file in $(ls custom/watch_*.py 2>/dev/null | sort -V); do
         file_label=$(basename "$watch_file" .py | sed 's/watch_//')
         file_order+=("$file_label")
-        file_start=$(date +%s)
+        file_start=$(date +%s.%N)
         file_tests[$file_label]=""
 
         has_tests_in_level=false
         raw_output=""
 
-        # Helper to redraw screen with current state
+        # Helper to redraw screen with current state (flicker-free)
         redraw_progress() {
-            printf '\033[2J\033[H'
-            echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+            # Move cursor to top, don't clear screen
+            printf '\033[H'
+            # Clear line and print header
+            printf '\033[K%s\n' "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
             for fl in "${file_order[@]}"; do
                 local ftime="${file_times[$fl]:-...}"
-                echo ""
-                echo "${bold}File: ${fl}${reset} ${dim}(${ftime})${reset}"
-                echo -e "${file_tests[$fl]}"
+                printf '\033[K\n'
+                printf '\033[K%s\n' "${bold}File: ${fl}${reset} ${dim}(${ftime})${reset}"
+                # Print each test line, clearing to end of line
+                while IFS= read -r tline; do
+                    [ -n "$tline" ] && printf '\033[K%s\n' "$tline"
+                done <<< "${file_tests[$fl]}"
             done
+            # Clear any remaining lines from previous output
+            printf '\033[J'
         }
 
         # Initial display for this file
@@ -138,13 +146,23 @@ run_tests() {
             raw_output+="$line"$'\n'
             if [[ "$line" == "passed:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                file_tests[$file_label]+="  [${green}PASS${reset}] $test_name"$'\n'
+                # Show arrow if this was the just-debugged method that now passes
+                if [ "$test_name" = "$just_debugged_method" ]; then
+                    file_tests[$file_label]+="${bold}${green}→ [PASS] $test_name${reset}"$'\n'
+                else
+                    file_tests[$file_label]+="  [${green}PASS${reset}] $test_name"$'\n'
+                fi
                 has_tests_in_level=true
                 passed_methods+=("$test_name")
                 redraw_progress
             elif [[ "$line" == "FAILED_METHOD:"* ]]; then
                 test_name=$(echo "$line" | cut -d' ' -f2)
-                file_tests[$file_label]+="  [${red}FAIL${reset}] $test_name"$'\n'
+                # Show arrow if this was the just-debugged method (still failing)
+                if [ "$test_name" = "$just_debugged_method" ]; then
+                    file_tests[$file_label]+="${bold}${red}→ [FAIL] $test_name${reset}"$'\n'
+                else
+                    file_tests[$file_label]+="  [${red}FAIL${reset}] $test_name"$'\n'
+                fi
                 has_tests_in_level=true
                 failed_methods+=("$test_name")
                 stop_after_this_file=true
@@ -170,9 +188,10 @@ run_tests() {
             fi
         done < <(python3 "$watch_file" 2>&1)
 
-        # Record elapsed time
-        file_end=$(date +%s)
-        file_elapsed=$((file_end - file_start))
+        # Record elapsed time with one decimal place
+        file_end=$(date +%s.%N)
+        file_elapsed=$(echo "$file_end - $file_start" | bc)
+        file_elapsed=$(printf "%.1f" "$file_elapsed")
         file_times[$file_label]="${file_elapsed}s"
 
         # Final redraw with timing
@@ -379,8 +398,12 @@ launch_debugger() {
     printf '\033[2J\033[3J\033[H'
     python3 custom/debug_this_test.py
 
+    # Track which method was just debugged for visual feedback
+    just_debugged_method="$first_fail_method"
     run_tests
     draw_screen
+    # Clear after displaying once
+    just_debugged_method=""
 }
 
 
@@ -395,7 +418,7 @@ while true; do
             continue
         fi
     fi
-    current_checksum=$(find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec stat -c %Y {} + 2>/dev/null | md5sum)
+    current_checksum=$(find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec md5sum {} + 2>/dev/null | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
         if [ -n "$last_checksum" ]; then
             run_tests
