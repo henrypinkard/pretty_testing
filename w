@@ -7,11 +7,11 @@ DEBUG_PREP="$REPO_ROOT/debug_prep.py"
 mkdir -p custom
 
 # --- 0. PARSE ARGS ---
-STOP_ON_FIRST=false
+RUN_ALL=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --stop-on-first|-f)
-            STOP_ON_FIRST=true
+        --all|-a)
+            RUN_ALL=true
             shift
             ;;
         *)
@@ -174,7 +174,8 @@ run_tests() {
                     failed_files+=("$(cd "$(dirname "$fail_src")" && pwd)/$(basename "$fail_src")")
                 fi
                 redraw_progress
-                if [ "$STOP_ON_FIRST" = true ]; then
+                # Default: stop on first failure (unless -a/--all)
+                if [ "$RUN_ALL" = false ]; then
                     break
                 fi
             elif [[ "$line" == "skipped:"* ]]; then
@@ -340,7 +341,11 @@ draw_screen() {
 
     # Help line
     echo ""
-    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  |  run: help${reset}"
+    local mode_info=""
+    if [ "$RUN_ALL" = true ]; then
+        mode_info="  ${yellow}[--all]${reset}"
+    fi
+    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  |  w -a (run all tests)${mode_info}${reset}"
 }
 
 # --- 6. MAIN LOOP ---
@@ -408,12 +413,21 @@ launch_debugger() {
 
 
 last_checksum=""
+DEBUG_LOG="custom/w_debug.log"
+echo "=== w debug log started $(date) ===" > "$DEBUG_LOG"
+
+debug_log() {
+    echo "[$(date +%H:%M:%S.%N)] $1" >> "$DEBUG_LOG"
+}
+
 while true; do
     if read -rsn1 -t 1 key 2>/dev/null; then
         if [ "$key" = "d" ]; then
+            debug_log "Key 'd' pressed - launching pudb"
             launch_debugger pudb
             continue
         elif [ "$key" = "p" ]; then
+            debug_log "Key 'p' pressed - launching pdbpp"
             launch_debugger pdbpp
             continue
         fi
@@ -421,8 +435,16 @@ while true; do
     current_checksum=$(find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec md5sum {} + 2>/dev/null | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
         if [ -n "$last_checksum" ]; then
+            debug_log "Checksum changed - refreshing"
+            debug_log "  Old: $last_checksum"
+            debug_log "  New: $current_checksum"
+            # Log which files changed
+            debug_log "  Files checked:"
+            find . "$test_source_dir" -name "*.py" -not -path "./custom/*" -exec md5sum {} + 2>/dev/null >> "$DEBUG_LOG"
             run_tests
             draw_screen
+        else
+            debug_log "Initial checksum set: $current_checksum"
         fi
         last_checksum="$current_checksum"
     fi

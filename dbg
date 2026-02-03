@@ -1,35 +1,44 @@
 #!/bin/bash
 # Emergency debug launcher — works independently of w
-# Usage: ./dbg tests/some_file.py test_method_name [pudb|pdbpp]
+# Usage: ./dbg tests/some_file.py [test_method_name] [pudb|pdbpp]
 set -e
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p custom
 
-if [ $# -lt 2 ]; then
-    echo "Usage: dbg TEST_FILE TEST_METHOD [pudb|pdbpp]"
+if [ $# -lt 1 ]; then
+    echo "Usage: dbg TEST_FILE [TEST_METHOD] [pudb|pdbpp]"
     echo ""
     echo "Examples:"
-    echo "  ./dbg tests/foo.py test_bar          # debug with pudb"
-    echo "  ./dbg tests/foo.py test_bar pdbpp    # debug with pdb++"
-    echo "  ./dbg custom_tests/foo.py test_bar   # custom test dir"
+    echo "  dbg tests/foo.py                  # run all tests in file"
+    echo "  dbg tests/foo.py test_bar         # debug specific test with pudb"
+    echo "  dbg tests/foo.py test_bar pdbpp   # debug with pdb++"
+    echo "  dbg custom_tests/foo.py           # custom test dir"
     exit 1
 fi
 
 TEST_FILE="$1"
-METHOD="$2"
+METHOD="${2:-}"
 DEBUGGER="${3:-pudb}"
+
+# If no method specified, just run all tests in file (no debugger)
+if [ -z "$METHOD" ]; then
+    echo "Running all tests in $TEST_FILE..."
+    python3 "$REPO_ROOT/test_generator.py" "$TEST_FILE"
+    python3 custom/debug_this_test_*.py
+    exit 0
+fi
 
 echo "Generating test file..."
 python3 "$REPO_ROOT/test_generator.py" "$TEST_FILE" "$METHOD"
 
 echo "Finding fail line..."
-err_out=$(python3 custom/my_test.py 2>&1 || true)
-fail_line=$(echo "$err_out" | grep -oP "File \".*my_test.py\", line \K\d+(?=, in $METHOD)" | tail -n 1)
+err_out=$(python3 custom/debug_this_test.py 2>&1 || true)
+fail_line=$(echo "$err_out" | grep -oP "File \".*debug_this_test.py\", line \K\d+(?=, in $METHOD)" | tail -n 1)
 fail_line=${fail_line:-0}
 
 echo "Prepping debugger ($DEBUGGER)..."
-python3 "$REPO_ROOT/debug_prep.py" debug custom/my_test.py \
+python3 "$REPO_ROOT/debug_prep.py" debug custom/debug_this_test.py \
     --method "$METHOD" --fail-line "$fail_line" --debugger "$DEBUGGER"
 
 echo "Launching..."
-python3 custom/my_test.py
+python3 custom/debug_this_test.py
