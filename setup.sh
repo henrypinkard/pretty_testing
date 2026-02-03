@@ -88,7 +88,7 @@ fi
 
 # Note: We added $KIT_ROOT to the path so python finds the file regardless of where you are
 if ! grep -q "alias d=" "$SHELL_CONFIG"; then
-    echo "alias d='python3 -m IPython --pdb $KIT_ROOT/custom/my_test.py'" >> "$SHELL_CONFIG"
+    echo "alias d='python3 -m IPython --pdb $KIT_ROOT/custom/debug_this_test.py'" >> "$SHELL_CONFIG"
 fi
 
 if ! grep -q "alias h=" "$SHELL_CONFIG"; then
@@ -103,7 +103,7 @@ fi
 alias t="$KIT_ROOT/t"
 alias w="$KIT_ROOT/w"
 alias da="$KIT_ROOT/da"
-alias d="python3 -m IPython --pdb $KIT_ROOT/custom/my_test.py"
+alias d="python3 -m IPython --pdb $KIT_ROOT/custom/debug_this_test.py"
 alias h="$KIT_ROOT/help"
 alias dbg="$KIT_ROOT/dbg"
 

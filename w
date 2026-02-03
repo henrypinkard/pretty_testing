@@ -49,6 +49,8 @@ first_fail_line=0
 last_debug_error=""
 user_error_file=""
 user_error_line=0
+last_user_error_file=""
+last_user_error_line=0
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 
 # --- 4. CORE FUNCTION ---
@@ -100,68 +102,76 @@ run_tests() {
     failed_methods=()
     failed_files=()
 
-    # E. RUN SWEEP (stop after first file with failures)
+    # E. RUN SWEEP (stop after first file with failures) - real-time output
     stop_after_this_file=false
-    progress_log=""
     for watch_file in $(ls custom/watch_*.py 2>/dev/null | sort -V); do
         file_label=$(basename "$watch_file" .py | sed 's/watch_//')
         file_start=$(date +%s)
 
-        # Show progress with live timer (runs in background, updates every 100ms)
-        (
-            while true; do
-                elapsed=$(($(date +%s) - file_start))
-                printf '\033[2J\033[H%s\n%s' "$progress_log" "${dim}Running ${file_label}... ${elapsed}s${reset}"
-                sleep 0.1
-            done
-        ) &
-        timer_pid=$!
-
-        raw_output=$(python3 "$watch_file" 2>&1)
-
-        # Stop the timer
-        kill $timer_pid 2>/dev/null
-        wait $timer_pid 2>/dev/null
-
-        file_end=$(date +%s)
-        file_elapsed=$((file_end - file_start))
-        progress_log+="${dim}${file_label}: ${file_elapsed}s${reset}"$'\n'
-
-        new_buffer+=$'\n'"${bold}File: ${file_label}${reset} ${dim}(${file_elapsed}s)${reset}"$'\n'
+        # Print file header immediately
+        new_buffer+=$'\n'"${bold}File: ${file_label}${reset}"$'\n'
+        printf '\033[2J\033[H'
+        echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+        echo -e "$new_buffer"
 
         has_tests_in_level=false
+        raw_output=""
 
+        # Stream output line by line for real-time display
         while IFS= read -r line; do
-             if [[ "$line" == "passed:"* ]]; then
-                 test_name=$(echo "$line" | cut -d' ' -f2)
-                 new_buffer+="  [${green}PASS${reset}] $test_name"$'\n'
-                 has_tests_in_level=true
-                 passed_methods+=("$test_name")
-             elif [[ "$line" == "FAILED_METHOD:"* ]]; then
-                 test_name=$(echo "$line" | cut -d' ' -f2)
-                 new_buffer+="  [${red}FAIL${reset}] $test_name"$'\n'
-                 has_tests_in_level=true
-                 failed_methods+=("$test_name")
-                 stop_after_this_file=true
-                 if [ -z "$first_fail_method" ]; then
-                     first_fail_method="$test_name"
-                 fi
-                 fail_src="$test_source_dir/${file_label}.py"
-                 if [ -f "$fail_src" ]; then
-                     failed_files+=("$(cd "$(dirname "$fail_src")" && pwd)/$(basename "$fail_src")")
-                 fi
-                 # With --stop-on-first, don't process remaining test results
-                 if [ "$STOP_ON_FIRST" = true ]; then
-                     break
-                 fi
-             elif [[ "$line" == "skipped:"* ]]; then
-                 test_name=$(echo "$line" | cut -d' ' -f2)
-                 new_buffer+="  [${dim}SKIP${reset}] $test_name"$'\n'
-                 has_tests_in_level=true
-             elif [[ "$line" == "NO_TESTS_FOUND_IN_FILE" ]]; then
-                 new_buffer+="  [${yellow}WARNING${reset}] No methods starting with 'test_' found.$'\n'"
-             fi
-        done <<< "$raw_output"
+            raw_output+="$line"$'\n'
+            if [[ "$line" == "passed:"* ]]; then
+                test_name=$(echo "$line" | cut -d' ' -f2)
+                new_buffer+="  [${green}PASS${reset}] $test_name"$'\n'
+                has_tests_in_level=true
+                passed_methods+=("$test_name")
+                # Redraw
+                printf '\033[2J\033[H'
+                echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+                echo -e "$new_buffer"
+            elif [[ "$line" == "FAILED_METHOD:"* ]]; then
+                test_name=$(echo "$line" | cut -d' ' -f2)
+                new_buffer+="  [${red}FAIL${reset}] $test_name"$'\n'
+                has_tests_in_level=true
+                failed_methods+=("$test_name")
+                stop_after_this_file=true
+                if [ -z "$first_fail_method" ]; then
+                    first_fail_method="$test_name"
+                fi
+                fail_src="$test_source_dir/${file_label}.py"
+                if [ -f "$fail_src" ]; then
+                    failed_files+=("$(cd "$(dirname "$fail_src")" && pwd)/$(basename "$fail_src")")
+                fi
+                # Redraw
+                printf '\033[2J\033[H'
+                echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+                echo -e "$new_buffer"
+                # With --stop-on-first, stop reading more output
+                if [ "$STOP_ON_FIRST" = true ]; then
+                    break
+                fi
+            elif [[ "$line" == "skipped:"* ]]; then
+                test_name=$(echo "$line" | cut -d' ' -f2)
+                new_buffer+="  [${dim}SKIP${reset}] $test_name"$'\n'
+                has_tests_in_level=true
+                # Redraw
+                printf '\033[2J\033[H'
+                echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+                echo -e "$new_buffer"
+            elif [[ "$line" == "NO_TESTS_FOUND_IN_FILE" ]]; then
+                new_buffer+="  [${yellow}WARNING${reset}] No methods starting with 'test_' found."$'\n'
+                # Redraw
+                printf '\033[2J\033[H'
+                echo "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+                echo -e "$new_buffer"
+            fi
+        done < <(python3 "$watch_file" 2>&1)
+
+        # Update file header with elapsed time
+        file_end=$(date +%s)
+        file_elapsed=$((file_end - file_start))
+        # Replace the file header line in buffer with one that includes time
+        new_buffer=$(echo "$new_buffer" | sed "s/${bold}File: ${file_label}${reset}/${bold}File: ${file_label}${reset} ${dim}(${file_elapsed}s)${reset}/")
 
         # CRASH DETECTION
         if [ "$has_tests_in_level" = false ]; then
@@ -187,13 +197,13 @@ run_tests() {
             python3 "$BUILDER" "$orig_file" "$first_fail_method" > /dev/null 2>&1
 
             # 1. GET FAIL LINE (in test) AND USER ERROR LOCATION (in user code)
-            err_out=$(python3 custom/my_test.py 2>&1)
-            fail_line=$(echo "$err_out" | grep -P "File \".*custom/my_test.py\", line \d+, in $first_fail_method" | tail -n 1 | grep -oP 'line \K\d+')
+            err_out=$(python3 custom/debug_this_test.py 2>&1)
+            fail_line=$(echo "$err_out" | grep -P "File \".*custom/debug_this_test.py\", line \d+, in $first_fail_method" | tail -n 1 | grep -oP 'line \K\d+')
             if [ -z "$fail_line" ]; then fail_line=0; fi
             first_fail_line="$fail_line"
 
             # Extract user code error location (file:line where exception originated)
-            user_error_loc=$(echo "$err_out" | python3 "$OUTPUT_PARSER" user-error-loc "custom/my_test.py" 2>/dev/null)
+            user_error_loc=$(echo "$err_out" | python3 "$OUTPUT_PARSER" user-error-loc "custom/debug_this_test.py" 2>/dev/null)
             if [ -n "$user_error_loc" ]; then
                 user_error_file=$(echo "$user_error_loc" | cut -d: -f1)
                 user_error_line=$(echo "$user_error_loc" | cut -d: -f2)
@@ -203,10 +213,10 @@ run_tests() {
             fi
 
             # 2. EXTRACT SOURCE
-            source_and_error=$(python3 "$OUTPUT_PARSER" source custom/my_test.py "$first_fail_method" "$fail_line" 2>/dev/null || echo "(source extraction failed)")
+            source_and_error=$(python3 "$OUTPUT_PARSER" source custom/debug_this_test.py "$first_fail_method" "$fail_line" 2>/dev/null || echo "(source extraction failed)")
 
             # 3. RUN AND PARSE EXECUTION LOG + ERROR
-            raw_trace=$(python3 custom/my_test.py 2>&1)
+            raw_trace=$(python3 custom/debug_this_test.py 2>&1)
             parsed_sections=$(echo "$raw_trace" | python3 "$OUTPUT_PARSER" trace 2>/dev/null || echo "___SECTION_SEP___${raw_trace}___SECTION_SEP___")
             error_msg=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==2')
             exec_log=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==3')
@@ -244,7 +254,14 @@ run_tests() {
             fi
         done
         if [ "$method_still_failing" = false ]; then
-            grep -v "custom/my_test.py" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
+            # Remove breakpoints from the test file
+            grep -v "custom/debug_this_test.py" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
+            # Also remove breakpoints from the user code file if we set one there
+            if [ -n "$last_user_error_file" ] && [ "$last_user_error_line" -gt 0 ]; then
+                grep -v "${last_user_error_file}:${last_user_error_line}:" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
+                last_user_error_file=""
+                last_user_error_line=0
+            fi
             last_debugged_method=""
         fi
     fi
@@ -318,6 +335,9 @@ launch_debugger() {
     fi
 
     last_debugged_method="$first_fail_method"
+    # Track user error location for cleanup later
+    last_user_error_file="$user_error_file"
+    last_user_error_line="$user_error_line"
 
     # Generate single-method test file
     builder_output=$(python3 "$BUILDER" "$first_fail_file" "$first_fail_method" 2>&1)
@@ -328,7 +348,7 @@ launch_debugger() {
     fi
 
     # Prepare debug version (prep + preflight + setUp fallback in one step)
-    debug_args=(debug custom/my_test.py --method "$first_fail_method" --fail-line "$first_fail_line" --debugger "$debugger")
+    debug_args=(debug custom/debug_this_test.py --method "$first_fail_method" --fail-line "$first_fail_line" --debugger "$debugger")
     if [ -n "$user_error_file" ] && [ "$user_error_line" -gt 0 ]; then
         debug_args+=(--user-error-file "$user_error_file" --user-error-line "$user_error_line")
     fi
@@ -337,14 +357,14 @@ launch_debugger() {
     if [ $? -ne 0 ]; then
         # Last resort: inject a simple set_trace at top
         if [ "$debugger" = "pdbpp" ]; then
-            sed -i '1s/^/import pdb; pdb.set_trace()\n/' custom/my_test.py 2>/dev/null
+            sed -i '1s/^/import pdb; pdb.set_trace()\n/' custom/debug_this_test.py 2>/dev/null
         else
-            sed -i '1s/^/import pudb; pudb.set_trace()\n/' custom/my_test.py 2>/dev/null
+            sed -i '1s/^/import pudb; pudb.set_trace()\n/' custom/debug_this_test.py 2>/dev/null
         fi
     fi
 
     printf '\033[2J\033[3J\033[H'
-    python3 custom/my_test.py
+    python3 custom/debug_this_test.py
 
     run_tests
     draw_screen

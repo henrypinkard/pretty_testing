@@ -60,8 +60,8 @@ class TestFileDiscovery(unittest.TestCase):
         """)
         r = self._run_generator(os.path.join(self.tests_dir, 'test_foo.py'))
         self.assertEqual(r.returncode, 0)
-        # Should produce custom/my_test_foo.py
-        self.assertTrue(os.path.exists(os.path.join(self.custom_dir, 'my_test_foo.py')))
+        # Should produce custom/debug_this_test_test_foo.py
+        self.assertTrue(os.path.exists(os.path.join(self.custom_dir, 'debug_this_test_test_foo.py')))
 
     def test_nonstandard_filename(self):
         """DemoICATest.py — no test_ prefix, CamelCase."""
@@ -73,7 +73,7 @@ class TestFileDiscovery(unittest.TestCase):
         """)
         r = self._run_generator(os.path.join(self.tests_dir, 'DemoICATest.py'))
         self.assertEqual(r.returncode, 0)
-        self.assertTrue(os.path.exists(os.path.join(self.custom_dir, 'my_DemoICATest.py')))
+        self.assertTrue(os.path.exists(os.path.join(self.custom_dir, 'debug_this_test_DemoICATest.py')))
 
     def test_filename_with_spaces_and_dashes(self):
         """my-test file.py — weird but legal filename."""
@@ -99,7 +99,7 @@ class TestFileDiscovery(unittest.TestCase):
                     self.assertEqual(1, 2)
         """)
         self._run_generator(os.path.join(self.tests_dir, 'check.py'))
-        r = self._run_generated('my_check.py')
+        r = self._run_generated('debug_this_test_check.py')
         self.assertIn('passed: test_pass', r.stdout)
         self.assertIn('FAILED_METHOD: test_fail', r.stdout)
 
@@ -114,7 +114,7 @@ class TestFileDiscovery(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._run_generator(os.path.join(self.tests_dir, 'multi.py'), 'test_a')
-        r = self._run_generated('my_test.py')
+        r = self._run_generated('debug_this_test.py')
         self.assertIn('passed: test_a', r.stdout)
         # test_b should not appear at all
         self.assertNotIn('test_b', r.stdout)
@@ -130,7 +130,7 @@ class TestFileDiscovery(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._run_generator(os.path.join(self.tests_dir, 'stuff.py'))
-        r = self._run_generated('my_stuff.py')
+        r = self._run_generated('debug_this_test_stuff.py')
         self.assertIn('passed: test_it', r.stdout)
 
     def test_no_test_class_reports_not_found(self):
@@ -139,7 +139,7 @@ class TestFileDiscovery(unittest.TestCase):
             x = 1
         """)
         self._run_generator(os.path.join(self.tests_dir, 'empty.py'))
-        r = self._run_generated('my_empty.py')
+        r = self._run_generated('debug_this_test_empty.py')
         self.assertIn('NO_TEST_CLASS_FOUND', r.stdout)
 
     def test_no_test_methods_reports_not_found(self):
@@ -151,7 +151,7 @@ class TestFileDiscovery(unittest.TestCase):
                     pass
         """)
         self._run_generator(os.path.join(self.tests_dir, 'nomethod.py'))
-        r = self._run_generated('my_nomethod.py')
+        r = self._run_generated('debug_this_test_nomethod.py')
         self.assertIn('NO_TESTS_FOUND_IN_FILE', r.stdout)
 
 
@@ -198,7 +198,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._gen(os.path.join(self.tests_dir, 'multi_class.py'))
-        r = self._run('my_multi_class.py')
+        r = self._run('debug_this_test_multi_class.py')
         self.assertIn('passed: test_a', r.stdout)
         self.assertIn('passed: test_z', r.stdout)
 
@@ -214,7 +214,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._gen(os.path.join(self.tests_dir, 'inherit.py'))
-        r = self._run('my_inherit.py')
+        r = self._run('debug_this_test_inherit.py')
         # BaseTest runs test_base
         # ChildTest runs test_base (inherited) AND test_child
         output = r.stdout
@@ -234,7 +234,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertEqual(self.shared, 42)
         """)
         self._gen(os.path.join(self.tests_dir, 'setup_cls.py'))
-        r = self._run('my_setup_cls.py')
+        r = self._run('debug_this_test_setup_cls.py')
         self.assertIn('passed: test_uses_shared', r.stdout)
 
     def test_skip_decorator(self):
@@ -249,7 +249,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._gen(os.path.join(self.tests_dir, 'skipped.py'))
-        r = self._run('my_skipped.py')
+        r = self._run('debug_this_test_skipped.py')
         self.assertIn('passed: test_normal', r.stdout)
         self.assertIn('skipped: test_skipped', r.stdout)
         self.assertNotIn('FAILED_METHOD: test_skipped', r.stdout)
@@ -266,7 +266,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._gen(os.path.join(self.tests_dir, 'expfail.py'))
-        r = self._run('my_expfail.py')
+        r = self._run('debug_this_test_expfail.py')
         self.assertIn('passed: test_ok', r.stdout)
         # expectedFailure wraps the method — it catches AssertionError internally
         # and raises _ExpectedFailure or returns success depending on version
@@ -285,7 +285,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._gen(os.path.join(self.tests_dir, 'custom_exc.py'))
-        r = self._run('my_custom_exc.py')
+        r = self._run('debug_this_test_custom_exc.py')
         self.assertIn('FAILED_METHOD: test_raises', r.stdout)
         self.assertIn('passed: test_ok', r.stdout)
 
@@ -302,7 +302,7 @@ class TestUnittestPatterns(unittest.TestCase):
                         pass  # doesn't raise — should fail
         """)
         self._gen(os.path.join(self.tests_dir, 'ctx_raises.py'))
-        r = self._run('my_ctx_raises.py')
+        r = self._run('debug_this_test_ctx_raises.py')
         self.assertIn('passed: test_raises_cm', r.stdout)
         self.assertIn('FAILED_METHOD: test_raises_cm_fails', r.stdout)
 
@@ -317,7 +317,7 @@ class TestUnittestPatterns(unittest.TestCase):
                             self.assertNotEqual(i, 1)
         """)
         self._gen(os.path.join(self.tests_dir, 'subtest.py'))
-        r = self._run('my_subtest.py')
+        r = self._run('debug_this_test_subtest.py')
         # subTest catches failures internally and re-raises at the end
         # The runner should see this as a failure
         self.assertIn('test_with_subtests', r.stdout)
@@ -331,7 +331,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertEqual(2 + 2, 4)
         """)
         self._gen(os.path.join(self.tests_dir, 'no_setup.py'))
-        r = self._run('my_no_setup.py')
+        r = self._run('debug_this_test_no_setup.py')
         self.assertIn('passed: test_simple', r.stdout)
 
     def test_teardown_called(self):
@@ -346,7 +346,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertEqual(1, 2)
         """)
         self._gen(os.path.join(self.tests_dir, 'teardown.py'))
-        r = self._run('my_teardown.py')
+        r = self._run('debug_this_test_teardown.py')
         self.assertIn('FAILED_METHOD: test_fail', r.stdout)
         # Can't easily check tearDown was called from outside,
         # but we verify it doesn't crash
@@ -365,7 +365,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     pass
         """)
         self._gen(os.path.join(self.tests_dir, 'setup_cls_fail.py'))
-        r = self._run('my_setup_cls_fail.py')
+        r = self._run('debug_this_test_setup_cls_fail.py')
         self.assertIn('FAILED_METHOD: test_a', r.stdout)
         self.assertIn('FAILED_METHOD: test_b', r.stdout)
         self.assertIn('setUpClass failed', r.stdout)
@@ -388,7 +388,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._gen(os.path.join(self.tests_dir, 'td_cls.py'))
-        r = self._run('my_td_cls.py')
+        r = self._run('debug_this_test_td_cls.py')
         self.assertIn('passed: test_one', r.stdout)
         self.assertIn('TEARDOWN_CLASS_CALLED', r.stdout)
 
@@ -404,7 +404,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(_shared.get('ready'))
         """)
         self._gen(os.path.join(self.tests_dir, 'setup_mod.py'))
-        r = self._run('my_setup_mod.py')
+        r = self._run('debug_this_test_setup_mod.py')
         self.assertIn('passed: test_module_ready', r.stdout)
 
     def test_setup_module_failure(self):
@@ -418,7 +418,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     pass
         """)
         self._gen(os.path.join(self.tests_dir, 'setup_mod_fail.py'))
-        r = self._run('my_setup_mod_fail.py')
+        r = self._run('debug_this_test_setup_mod_fail.py')
         self.assertIn('FAILED_METHOD: test_a', r.stdout)
         self.assertIn('setUpModule failed', r.stdout)
 
@@ -435,7 +435,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._gen(os.path.join(self.tests_dir, 'skipif.py'))
-        r = self._run('my_skipif.py')
+        r = self._run('debug_this_test_skipif.py')
         self.assertIn('skipped: test_conditional_skip', r.stdout)
         self.assertIn('passed: test_conditional_run', r.stdout)
 
@@ -451,7 +451,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertTrue(True)
         """)
         self._gen(os.path.join(self.tests_dir, 'two_classes.py'), 'test_beta')
-        r = self._run('my_test.py')
+        r = self._run('debug_this_test.py')
         self.assertIn('passed: test_beta', r.stdout)
         self.assertNotIn('test_alpha', r.stdout)
 
@@ -465,7 +465,7 @@ class TestUnittestPatterns(unittest.TestCase):
                     self.assertEqual(1, 2)
         """)
         self._gen(os.path.join(self.tests_dir, 'expfail2.py'))
-        r = self._run('my_expfail2.py')
+        r = self._run('debug_this_test_expfail2.py')
         # expectedFailure catches the assertion internally — should pass
         self.assertIn('passed: test_known_broken', r.stdout)
 

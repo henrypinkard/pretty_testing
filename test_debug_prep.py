@@ -294,13 +294,13 @@ class TestExtractUserErrorLocation(unittest.TestCase):
         from output_parser import extract_user_error_location
         traceback = """\
 Traceback (most recent call last):
-  File "custom/my_test.py", line 10, in test_foo
+  File "custom/debug_this_test.py", line 10, in test_foo
     result = my_module.do_thing()
   File "/home/user/project/my_module.py", line 42, in do_thing
     raise ValueError("oops")
 ValueError: oops
 """
-        path, line = extract_user_error_location(traceback, "my_test.py")
+        path, line = extract_user_error_location(traceback, "debug_this_test.py")
         self.assertEqual(path, "/home/user/project/my_module.py")
         self.assertEqual(line, 42)
 
@@ -308,24 +308,24 @@ ValueError: oops
         from output_parser import extract_user_error_location
         traceback = """\
 Traceback (most recent call last):
-  File "custom/my_test.py", line 10, in test_foo
+  File "custom/debug_this_test.py", line 10, in test_foo
     json.loads(bad)
   File "/usr/lib/python3.10/json/__init__.py", line 346, in loads
     return _default_decoder.decode(s)
 JSONDecodeError: Expecting value
 """
-        path, line = extract_user_error_location(traceback, "my_test.py")
+        path, line = extract_user_error_location(traceback, "debug_this_test.py")
         self.assertIsNone(path)
 
     def test_returns_none_when_only_test_file(self):
         from output_parser import extract_user_error_location
         traceback = """\
 Traceback (most recent call last):
-  File "custom/my_test.py", line 10, in test_foo
+  File "custom/debug_this_test.py", line 10, in test_foo
     self.assertEqual(1, 2)
 AssertionError: 1 != 2
 """
-        path, line = extract_user_error_location(traceback, "my_test.py")
+        path, line = extract_user_error_location(traceback, "debug_this_test.py")
         self.assertIsNone(path)
 
 

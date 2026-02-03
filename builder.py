@@ -162,7 +162,7 @@ if __name__ == '__main__':
                         # not inside unittest internals like case.py
                         frame = tb[-1]
                         for f in reversed(tb):
-                            if f.filename == __file__ or 'my_test' in os.path.basename(f.filename) or 'watch_' in os.path.basename(f.filename):
+                            if f.filename == __file__ or 'debug_this_test' in os.path.basename(f.filename) or 'watch_' in os.path.basename(f.filename):
                                 frame = f
                                 break
                         filename = os.path.basename(frame.filename)
@@ -212,7 +212,7 @@ def main():
     if len(sys.argv) < 2: sys.exit(1)
     test_file = sys.argv[1]
     if len(sys.argv) == 3:
-        dest_file = os.path.join("custom", "my_test.py")
+        dest_file = os.path.join("custom", "debug_this_test.py")
         only_test_method = sys.argv[2]
     else:
         base = os.path.basename(test_file)

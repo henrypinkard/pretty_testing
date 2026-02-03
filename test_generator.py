@@ -86,7 +86,7 @@ if __name__ == '__main__':
                 test_classes.append(obj)
 
     if not test_classes:
-        print("NO_TEST_CLASS_FOUND")
+        print("NO_TEST_CLASS_FOUND", flush=True)
         sys.exit(0)
 
     # --- BUILD (class, method) PAIRS ---
@@ -108,7 +108,7 @@ if __name__ == '__main__':
                 pairs.append((_cls, _m))
 
     if not pairs:
-        print("NO_TESTS_FOUND_IN_FILE")
+        print("NO_TESTS_FOUND_IN_FILE", flush=True)
         sys.exit(0)
 
     if len(sys.argv) > 1:
@@ -193,18 +193,18 @@ if __name__ == '__main__':
                 # Test passed when expected to fail — unexpected success
                 print("FAILED_METHOD:", method_name)
                 continue
-            print("passed:", method_name)
+            print("passed:", method_name, flush=True)
         except unittest.SkipTest:
             if single_method:
                 sys.settrace(None)
-            print("skipped:", method_name)
+            print("skipped:", method_name, flush=True)
         except Exception as e:
             sys.settrace(None)
             # Handle @expectedFailure: flag-based (3.12+) or wrapper-based (older)
             if _expecting_failure or type(e).__name__ == '_ExpectedFailure':
-                print("passed:", method_name)
+                print("passed:", method_name, flush=True)
                 continue
-            print("FAILED_METHOD:", method_name)
+            print("FAILED_METHOD:", method_name, flush=True)
 
             if single_method:
                 print("\\n___FAILURE_SUMMARY_START___")
@@ -216,7 +216,7 @@ if __name__ == '__main__':
                         # not inside unittest internals like case.py
                         frame = tb[-1]
                         for f in reversed(tb):
-                            if f.filename == __file__ or 'my_test' in os.path.basename(f.filename) or 'watch_' in os.path.basename(f.filename):
+                            if f.filename == __file__ or 'debug_this_test' in os.path.basename(f.filename) or 'watch_' in os.path.basename(f.filename):
                                 frame = f
                                 break
                         filename = os.path.basename(frame.filename)
@@ -281,12 +281,12 @@ def main():
     if len(sys.argv) < 2: sys.exit(1)
     test_file = sys.argv[1]
     if len(sys.argv) == 3:
-        dest_file = os.path.join("custom", "my_test.py")
+        dest_file = os.path.join("custom", "debug_this_test.py")
         only_test_method = sys.argv[2]
     else:
         base = os.path.basename(test_file)
         stem = os.path.splitext(base)[0]
-        dest_file = os.path.join("custom", f"my_{stem}.py")
+        dest_file = os.path.join("custom", f"debug_this_test_{stem}.py")
         only_test_method = None
 
     generate_standalone_test(test_file, dest_file, only_test_method)
