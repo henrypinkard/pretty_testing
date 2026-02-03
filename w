@@ -296,16 +296,23 @@ run_tests() {
                 break
             fi
         done
+        debug_log "Breakpoint cleanup: method=$last_debugged_method still_failing=$method_still_failing"
+        debug_log "  last_user_error_file=$last_user_error_file line=$last_user_error_line"
+        debug_log "  PUDB_BP_FILE contents before:"
+        cat "$PUDB_BP_FILE" >> "$DEBUG_LOG" 2>/dev/null
         if [ "$method_still_failing" = false ]; then
             # Remove breakpoints from the test file
             grep -v "custom/debug_this_test.py" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
             # Also remove breakpoints from the user code file if we set one there
             if [ -n "$last_user_error_file" ] && [ "$last_user_error_line" -gt 0 ]; then
-                grep -v "${last_user_error_file}:${last_user_error_line}:" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
+                debug_log "  Removing user breakpoint: $last_user_error_file:$last_user_error_line"
+                grep -v "${last_user_error_file}:${last_user_error_line}" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
                 last_user_error_file=""
                 last_user_error_line=0
             fi
             last_debugged_method=""
+            debug_log "  PUDB_BP_FILE contents after:"
+            cat "$PUDB_BP_FILE" >> "$DEBUG_LOG" 2>/dev/null
         fi
     fi
 
@@ -359,7 +366,9 @@ draw_screen() {
 }
 
 # --- 6. MAIN LOOP ---
-trap 'printf "\n"; exit 0' INT TERM
+# Hide cursor during operation, restore on exit
+printf '\033[?25l'
+trap 'printf "\033[?25h\n"; exit 0' INT TERM EXIT
 printf '\033[2J\033[3J\033[H'
 echo "${bold}Starting Test Monitor...${reset}"
 run_tests
@@ -426,6 +435,16 @@ launch_debugger() {
     draw_screen
     # Clear highlights after displaying once
     highlight_methods=()
+
+    # Update checksum to current state so edits made during debugging
+    # don't trigger an immediate refresh that clears the highlights
+    if [ -d "custom_tests" ] && ls custom_tests/*.py >/dev/null 2>&1; then
+        watch_dir="custom_tests"
+    else
+        watch_dir="tests"
+    fi
+    watched_files=$(find . -maxdepth 1 -name "*.py" -type f 2>/dev/null; find "$watch_dir" -name "*.py" -type f 2>/dev/null)
+    last_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
 }
 
 
@@ -461,6 +480,10 @@ while true; do
     current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
         if [ -n "$last_checksum" ]; then
+            # Small delay to let file writes complete (avoid race with editor flush)
+            sleep 0.1
+            # Recompute checksum after delay to get final state
+            current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
             debug_log "Checksum changed - refreshing (watch_dir=$watch_dir)"
             debug_log "  Old: $last_checksum"
             debug_log "  New: $current_checksum"
