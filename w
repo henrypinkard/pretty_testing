@@ -211,8 +211,8 @@ run_tests() {
             fi
         fi
 
-        # Stop processing more files if this file had failures
-        if [ "$stop_after_this_file" = true ]; then
+        # Stop processing more files if this file had failures (unless --all mode)
+        if [ "$stop_after_this_file" = true ] && [ "$RUN_ALL" = false ]; then
             break
         fi
     done
