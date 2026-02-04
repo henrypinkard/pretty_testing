@@ -31,7 +31,18 @@ separator() {
 # --- PYRIGHT ---
 separator "PYRIGHT (Type Checking)"
 if command -v pyright &> /dev/null || python3 -c "import pyright" 2>/dev/null; then
-    python3 -m pyright "$TARGET" --ignore "$EXCLUDES" 2>&1 || true
+    # Pyright uses --ignore for error codes, not directories
+    # For directory exclusion, we find python files excluding those dirs
+    find "$TARGET" -name "*.py" -type f \
+        -not -path "*/tests/*" \
+        -not -path "*/custom_tests/*" \
+        -not -path "*/custom/*" \
+        -not -path "*/pretty_testing/*" \
+        -not -path "*/.git/*" \
+        -not -path "*/__pycache__/*" \
+        -not -path "*/.venv/*" \
+        -not -path "*/venv/*" \
+        2>/dev/null | xargs python3 -m pyright 2>&1 || true
 else
     echo "${yellow}pyright not installed. Run setup.sh or: pip install pyright${reset}"
 fi
