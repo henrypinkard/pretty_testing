@@ -18,8 +18,8 @@ ${bold}${green}LEVEL 0: w is working${reset}
     ${green}d${reset}  debug first failure with pudb
     ${green}p${reset}  debug first failure with pdb++
   Options:
-    ${bold}w${reset}       ${dim}# stop on first failure (default)${reset}
-    ${bold}w -a${reset}    ${dim}# run all tests${reset}
+    ${bold}w${reset}       ${dim}# run all tests (default)${reset}
+    ${bold}w -s${reset}    ${dim}# stop on first failure${reset}
   Tests come from ${blue}custom_tests/${reset} if it exists, otherwise ${blue}tests/${reset}.
 
 ${bold}${yellow}LEVEL 1: w is broken, but Python works${reset}

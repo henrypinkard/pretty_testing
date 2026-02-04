@@ -7,11 +7,11 @@ DEBUG_PREP="$REPO_ROOT/debug_prep.py"
 mkdir -p custom
 
 # --- 0. PARSE ARGS ---
-RUN_ALL=false
+STOP_EARLY=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --all|-a)
-            RUN_ALL=true
+        --stop|-s)
+            STOP_EARLY=true
             shift
             ;;
         *)
@@ -180,7 +180,7 @@ run_tests() {
                 fi
                 redraw_progress
                 # Default: stop on first failure (unless -a/--all)
-                if [ "$RUN_ALL" = false ]; then
+                if [ "$STOP_EARLY" = true ]; then
                     break
                 fi
             elif [[ "$line" == "skipped:"* ]]; then
@@ -212,7 +212,7 @@ run_tests() {
         fi
 
         # Stop processing more files if this file had failures (unless --all mode)
-        if [ "$stop_after_this_file" = true ] && [ "$RUN_ALL" = false ]; then
+        if [ "$stop_after_this_file" = true ] && [ "$STOP_EARLY" = true ]; then
             break
         fi
     done
@@ -346,10 +346,10 @@ draw_screen() {
     # Help line
     echo ""
     local mode_info=""
-    if [ "$RUN_ALL" = true ]; then
-        mode_info="  ${yellow}[--all]${reset}"
+    if [ "$STOP_EARLY" = true ]; then
+        mode_info="  ${yellow}[--stop]${reset}"
     fi
-    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  |  w -a (run all tests)${mode_info}${reset}"
+    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  |  w -s (stop on first failure)${mode_info}${reset}"
 }
 
 # --- 6. MAIN LOOP ---
