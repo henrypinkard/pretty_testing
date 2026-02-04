@@ -1,6 +1,5 @@
 #!/bin/bash
 # Static analysis tool - runs pyright, ruff, and custom analyzers
-# Output is combined into one scrollable view
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -10,8 +9,6 @@ reset=$(tput sgr0)
 blue=$(tput setaf 4)
 yellow=$(tput setaf 3)
 green=$(tput setaf 2)
-red=$(tput setaf 1)
-dim=$(tput dim)
 
 # Determine what to analyze
 if [ -n "$1" ]; then
@@ -20,55 +17,39 @@ else
     TARGET="."
 fi
 
-# Collect all output
-output=""
+# Directories to exclude
+EXCLUDES="tests,custom_tests,custom,pretty_testing,.git,__pycache__,.venv,venv"
 
 separator() {
-    output+=$'\n'"${bold}${blue}═══════════════════════════════════════════════════════════════${reset}"$'\n'
-    output+="${bold}${blue}  $1${reset}"$'\n'
-    output+="${bold}${blue}═══════════════════════════════════════════════════════════════${reset}"$'\n\n'
+    echo ""
+    echo "${bold}${blue}═══════════════════════════════════════════════════════════════${reset}"
+    echo "${bold}${blue}  $1${reset}"
+    echo "${bold}${blue}═══════════════════════════════════════════════════════════════${reset}"
+    echo ""
 }
 
 # --- PYRIGHT ---
+separator "PYRIGHT (Type Checking)"
 if command -v pyright &> /dev/null || python3 -c "import pyright" 2>/dev/null; then
-    separator "PYRIGHT (Type Checking)"
-    pyright_out=$(python3 -m pyright "$TARGET" 2>&1) || true
-    if [ -z "$pyright_out" ] || [[ "$pyright_out" == *"0 errors"* ]]; then
-        output+="${green}No type errors found.${reset}"$'\n'
-    else
-        output+="$pyright_out"$'\n'
-    fi
+    python3 -m pyright "$TARGET" --ignore "$EXCLUDES" 2>&1 || true
 else
-    separator "PYRIGHT (Type Checking)"
-    output+="${yellow}pyright not installed. Run setup.sh or: pip install pyright${reset}"$'\n'
+    echo "${yellow}pyright not installed. Run setup.sh or: pip install pyright${reset}"
 fi
 
 # --- RUFF ---
+separator "RUFF (Linting)"
 if command -v ruff &> /dev/null || python3 -c "import ruff" 2>/dev/null; then
-    separator "RUFF (Linting)"
-    ruff_out=$(python3 -m ruff check "$TARGET" 2>&1) || true
-    if [ -z "$ruff_out" ] || [[ "$ruff_out" == *"All checks passed"* ]]; then
-        output+="${green}No linting issues found.${reset}"$'\n'
-    else
-        output+="$ruff_out"$'\n'
-    fi
+    python3 -m ruff check "$TARGET" \
+        --exclude "$EXCLUDES" \
+        --output-format=full \
+        2>&1 || true
 else
-    separator "RUFF (Linting)"
-    output+="${yellow}ruff not installed. Run setup.sh or: pip install ruff${reset}"$'\n'
+    echo "${yellow}ruff not installed. Run setup.sh or: pip install ruff${reset}"
 fi
 
 # --- CUSTOM ANALYZERS ---
 # Add custom static analysis tools here
-# Example:
-# separator "CUSTOM ANALYZER"
-# custom_out=$(python3 "$REPO_ROOT/my_analyzer.py" "$TARGET" 2>&1) || true
-# output+="$custom_out"$'\n'
-
 if [ -f "$REPO_ROOT/custom_lint.sh" ]; then
     separator "CUSTOM CHECKS"
-    custom_out=$("$REPO_ROOT/custom_lint.sh" "$TARGET" 2>&1) || true
-    output+="$custom_out"$'\n'
+    "$REPO_ROOT/custom_lint.sh" "$TARGET" 2>&1 || true
 fi
-
-# --- OUTPUT ---
-echo "$output"

@@ -114,28 +114,28 @@ echo "Aliases have been saved to $SHELL_CONFIG and will work in new terminals."
 # =============================================================================
 # STATIC ANALYSIS TOOLS (optional - failures here don't affect core functionality)
 # =============================================================================
-(
-    echo ""
-    echo "Setting up static analysis tools..."
+echo ""
+echo "Setting up static analysis tools..."
 
-    # Install pyright and ruff (failures are non-fatal)
-    python3 -c "import pyright" 2>/dev/null || {
-        echo "  Installing pyright..."
-        pip3 install pyright 2>/dev/null || pip install pyright 2>/dev/null || echo "  Warning: pyright install failed"
-    }
+# Install pyright and ruff (failures are non-fatal)
+python3 -c "import pyright" 2>/dev/null || {
+    echo "  Installing pyright..."
+    pip3 install pyright 2>/dev/null || pip install pyright 2>/dev/null || echo "  Warning: pyright install failed"
+} || true
 
-    python3 -c "import ruff" 2>/dev/null || {
-        echo "  Installing ruff..."
-        pip3 install ruff 2>/dev/null || pip install ruff 2>/dev/null || echo "  Warning: ruff install failed"
-    }
+python3 -c "import ruff" 2>/dev/null || {
+    echo "  Installing ruff..."
+    pip3 install ruff 2>/dev/null || pip install ruff 2>/dev/null || echo "  Warning: ruff install failed"
+} || true
 
-    # Create lint command
-    chmod +x "$KIT_ROOT/lint" 2>/dev/null
+# Create lint command
+chmod +x "$KIT_ROOT/lint" 2>/dev/null || true
 
-    # Add alias
-    if ! grep -q "alias lint=" "$SHELL_CONFIG"; then
-        echo "alias lint='$KIT_ROOT/lint'" >> "$SHELL_CONFIG"
-    fi
+# Add alias
+if ! grep -q "alias lint=" "$SHELL_CONFIG"; then
+    echo "alias lint='$KIT_ROOT/lint'" >> "$SHELL_CONFIG"
+fi
 
-    echo "  Static analysis tools ready. Run 'lint' to check code."
-) || echo "Warning: Static analysis setup had issues (non-fatal)"
+alias lint="$KIT_ROOT/lint"
+
+echo "  Static analysis tools ready. Run 'lint' to check code."
