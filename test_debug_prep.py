@@ -158,6 +158,49 @@ class TestInjectSetupTrace(unittest.TestCase):
         result = inject_setup_trace(lines)
         self.assertIn('set_trace', result[0])
 
+    def test_setup_injection_with_breakpoints(self):
+        """When injecting into setUp, should also set breakpoints at fail line and method start."""
+        lines = self._make_lines("""\
+            class TestFoo:
+                def setUp(self):
+                    self.x = 1
+                def test_bar(self):
+                    y = 2
+                    assert y == 1
+        """)
+        result = inject_setup_trace(
+            lines,
+            debugger='pudb',
+            method='test_bar',
+            fail_line=6,
+            abs_path='/tmp/test.py',
+        )
+        joined = ''.join(result)
+        self.assertIn('set_trace', joined)
+        # Should have set_break for the fail line (adjusted for injection)
+        self.assertIn('set_break', joined)
+        self.assertIn('/tmp/test.py', joined)
+
+    def test_setup_injection_sets_method_start_breakpoint(self):
+        """When injecting into setUp, should set breakpoint at start of target method body."""
+        lines = self._make_lines("""\
+            class TestFoo:
+                def setUp(self):
+                    self.x = 1
+                def test_bar(self):
+                    first_line = 1
+                    second_line = 2
+        """)
+        result = inject_setup_trace(
+            lines,
+            debugger='pudb',
+            method='test_bar',
+            abs_path='/tmp/test.py',
+        )
+        joined = ''.join(result)
+        # Should set breakpoint at the first line of test_bar body
+        self.assertIn('set_break', joined)
+
 
 class TestPatchPostmortem(unittest.TestCase):
 
@@ -193,6 +236,54 @@ class TestPreflight(unittest.TestCase):
         f.write(textwrap.dedent(code))
         f.close()
         return f.name
+
+    def test_preflight_multiple_classes_finds_correct_one(self):
+        """When multiple test classes exist, preflight should find the one with the target method."""
+        path = self._write_temp("""\
+            import unittest
+            class TestFirst(unittest.TestCase):
+                @classmethod
+                def setUpClass(cls):
+                    cls.x = 1
+                def test_a(self):
+                    pass
+
+            class TestSecond(unittest.TestCase):
+                def setUp(self):
+                    self.y = 2
+                def test_b(self):
+                    pass
+
+            class TestThird(unittest.TestCase):
+                @classmethod
+                def setUpClass(cls):
+                    cls.z = 3
+                def test_c(self):
+                    pass
+        """)
+        try:
+            # test_b is in TestSecond which has setUp - should succeed
+            ok, err = run_preflight(path, 'test_b')
+            self.assertTrue(ok, f"Expected success for test_b but got: {err}")
+        finally:
+            os.unlink(path)
+
+    def test_preflight_method_in_class_with_setUpClass(self):
+        """Preflight should succeed even if the target class uses setUpClass instead of setUp."""
+        path = self._write_temp("""\
+            import unittest
+            class TestWithSetUpClass(unittest.TestCase):
+                @classmethod
+                def setUpClass(cls):
+                    cls.x = 1
+                def test_a(self):
+                    pass
+        """)
+        try:
+            ok, err = run_preflight(path, 'test_a')
+            self.assertTrue(ok, f"Expected success but got: {err}")
+        finally:
+            os.unlink(path)
 
     def test_preflight_success(self):
         path = self._write_temp("""\

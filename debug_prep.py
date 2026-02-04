@@ -45,6 +45,30 @@ def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, u
         return '; '.join(parts)
 
 
+def _trace_line_multi(debugger, abs_path=None, bp_targets=None, user_error_file=None, user_error_line=None):
+    """Return set_trace injection with multiple breakpoints (no indent, no newline)."""
+    bp_targets = bp_targets or []
+    if debugger == 'pdbpp':
+        sticky = "hasattr(pdb,'DefaultConfig') and setattr(pdb.DefaultConfig,'sticky_by_default',True); "
+        parts = [f'import pdb; {sticky}_dbg = pdb.Pdb()']
+        for bp in bp_targets:
+            if abs_path:
+                parts.append(f'_dbg.set_break("{abs_path}", {bp})')
+        if user_error_file and user_error_line:
+            parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        parts.append('pdb.set_trace()')
+        return '; '.join(parts)
+    else:
+        parts = ['import pudb; _dbg = pudb._get_debugger()']
+        for bp in bp_targets:
+            if abs_path:
+                parts.append(f'_dbg.set_break("{abs_path}", {bp})')
+        if user_error_file and user_error_line:
+            parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        parts.append('pudb.set_trace()')
+        return '; '.join(parts)
+
+
 def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb',
                      user_error_file=None, user_error_line=None):
     """Inject set_trace (and optionally set_break) at the start of the given method body.
@@ -109,29 +133,68 @@ def patch_postmortem(lines, debugger):
     return result
 
 
-def inject_setup_trace(lines, debugger='pudb'):
-    """Inject set_trace into setUp body (or top of file if no setUp)."""
+def inject_setup_trace(lines, debugger='pudb', method=None, fail_line=0, abs_path=None,
+                       user_error_file=None, user_error_line=None):
+    """Inject set_trace into setUp body (or top of file if no setUp).
+
+    When method/fail_line/abs_path are provided, also sets breakpoints at:
+    - The first line of the target method body
+    - The fail line (adjusted for the injection offset)
+    """
     source = ''.join(lines)
     tree = ast.parse(source)
     result = list(lines)
 
+    # Find the target method's body start line (before any injection)
+    method_body_line = None
+    if method:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == method:
+                method_body_line = node.body[0].lineno
+                break
+
+    # Find setUp and inject set_trace
+    setup_found = False
+    setup_injection_line = None
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == 'setUp':
             body_line = node.body[0].lineno - 1
+            setup_injection_line = body_line
             indent = len(result[body_line]) - len(result[body_line].lstrip())
             pad = ' ' * indent
-            trace = _trace_line(debugger)
-            result.insert(body_line, pad + trace + '\n')
-            return result
 
-    # No setUp found — inject at top
-    trace = _trace_line(debugger)
-    result.insert(0, trace + '\n')
+            # Calculate breakpoints (they'll be offset by 1 after injection)
+            bp_targets = []
+            if method_body_line and abs_path:
+                # Breakpoint at method body start (will be +1 after injection)
+                bp_targets.append(method_body_line + 1)
+            if fail_line and abs_path and fail_line != method_body_line:
+                # Breakpoint at fail line (also +1 after injection)
+                bp_targets.append(fail_line + 1)
+
+            trace = _trace_line_multi(debugger, abs_path, bp_targets, user_error_file, user_error_line)
+            result.insert(body_line, pad + trace + '\n')
+            setup_found = True
+            break
+
+    if not setup_found:
+        # No setUp found — inject at top
+        bp_targets = []
+        if method_body_line and abs_path:
+            bp_targets.append(method_body_line + 1)
+        if fail_line and abs_path and fail_line != method_body_line:
+            bp_targets.append(fail_line + 1)
+        trace = _trace_line_multi(debugger, abs_path, bp_targets, user_error_file, user_error_line)
+        result.insert(0, trace + '\n')
+
     return result
 
 
 def run_preflight(file_path, method):
-    """Try importing the test file and running setUp. Returns (ok, error_msg)."""
+    """Try importing the test file and running setUp. Returns (ok, error_msg).
+
+    Finds the TestCase class that contains the target method (handles multiple classes).
+    """
     import importlib.util
     import unittest
 
@@ -143,15 +206,25 @@ def run_preflight(file_path, method):
     except Exception as e:
         return False, f'Import error: {e}'
 
+    # Find the class that contains the target method
+    target_class = None
     for name in dir(mod):
         obj = getattr(mod, name)
         if isinstance(obj, type) and issubclass(obj, unittest.TestCase) and obj is not unittest.TestCase:
-            try:
-                instance = obj(method)
-                instance.setUp()
-            except Exception as e:
-                return False, f'setUp failed: {e}'
-            break
+            if hasattr(obj, method):
+                target_class = obj
+                break
+
+    if target_class is None:
+        return False, f'No TestCase class contains method {method}'
+
+    try:
+        instance = target_class(method)
+        # Only call setUp if the class has one (not setUpClass)
+        if hasattr(instance, 'setUp') and callable(getattr(instance, 'setUp')):
+            instance.setUp()
+    except Exception as e:
+        return False, f'setUp failed: {e}'
 
     return True, ''
 
@@ -176,7 +249,10 @@ def full_debug_prep(file_path, method, fail_line=0, debugger='pudb',
         # setUp or import failed — start fresh from original, inject into setUp instead
         cleaned = remove_timeouts(original_lines)
         cleaned = neutralize_alarms(cleaned)
-        result = inject_setup_trace(cleaned, debugger)
+        # Pass breakpoint info so we stop at the right place after setUp
+        result = inject_setup_trace(cleaned, debugger, method=method, fail_line=fail_line,
+                                    abs_path=abs_path, user_error_file=user_error_file,
+                                    user_error_line=user_error_line)
         result = patch_postmortem(result, debugger)
         with open(file_path, 'w') as f:
             f.writelines(result)
