@@ -33,7 +33,7 @@ python3 "$REPO_ROOT/test_generator.py" "$TEST_FILE" "$METHOD"
 
 echo "Finding fail line..."
 err_out=$(python3 custom/debug_this_test.py 2>&1 || true)
-fail_line=$(echo "$err_out" | grep -oP "File \".*debug_this_test.py\", line \K\d+(?=, in $METHOD)" | tail -n 1)
+fail_line=$(echo "$err_out" | python3 "$REPO_ROOT/output_parser.py" extract-fail-line "debug_this_test.py" "$METHOD" 2>/dev/null)
 fail_line=${fail_line:-0}
 
 echo "Prepping debugger ($DEBUGGER)..."

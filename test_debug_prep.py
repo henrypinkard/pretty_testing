@@ -420,5 +420,97 @@ AssertionError: 1 != 2
         self.assertIsNone(path)
 
 
+class TestExtractFailLine(unittest.TestCase):
+    """Test output_parser.extract_fail_line."""
+
+    def test_basic_extraction(self):
+        from output_parser import extract_fail_line
+        traceback = """\
+Traceback (most recent call last):
+  File "custom/debug_this_test.py", line 25, in test_foo
+    self.assertEqual(1, 2)
+AssertionError: 1 != 2
+"""
+        line = extract_fail_line(traceback, "debug_this_test.py", "test_foo")
+        self.assertEqual(line, 25)
+
+    def test_method_with_brackets(self):
+        """Test that method names with brackets like test_foo[param] are handled."""
+        from output_parser import extract_fail_line
+        traceback = """\
+Traceback (most recent call last):
+  File "custom/debug_this_test.py", line 42, in test_foo[param1-param2]
+    assert result == expected
+AssertionError
+"""
+        line = extract_fail_line(traceback, "debug_this_test.py", "test_foo[param1-param2]")
+        self.assertEqual(line, 42)
+
+    def test_multiple_frames_returns_last(self):
+        """When the same file/method appears multiple times, return the last (deepest) frame."""
+        from output_parser import extract_fail_line
+        traceback = """\
+Traceback (most recent call last):
+  File "custom/debug_this_test.py", line 10, in test_recursive
+    self.helper()
+  File "custom/debug_this_test.py", line 15, in helper
+    self.test_recursive()
+  File "custom/debug_this_test.py", line 20, in test_recursive
+    raise ValueError()
+ValueError
+"""
+        line = extract_fail_line(traceback, "debug_this_test.py", "test_recursive")
+        self.assertEqual(line, 20)
+
+    def test_returns_zero_when_not_found(self):
+        from output_parser import extract_fail_line
+        traceback = """\
+Traceback (most recent call last):
+  File "other_file.py", line 10, in other_method
+    raise ValueError()
+ValueError
+"""
+        line = extract_fail_line(traceback, "debug_this_test.py", "test_foo")
+        self.assertEqual(line, 0)
+
+    def test_path_variations(self):
+        """Test that different path representations match by basename."""
+        from output_parser import extract_fail_line
+        traceback = """\
+Traceback (most recent call last):
+  File "/home/user/project/custom/debug_this_test.py", line 33, in test_bar
+    assert False
+AssertionError
+"""
+        # Should match even though we pass just the basename
+        line = extract_fail_line(traceback, "debug_this_test.py", "test_bar")
+        self.assertEqual(line, 33)
+
+
+class TestColorizeErrorExtended(unittest.TestCase):
+    """Test that colorize_error handles more exception types."""
+
+    def test_stop_iteration(self):
+        from output_parser import colorize_error
+        text = "StopIteration: generator exhausted"
+        result = colorize_error(text)
+        self.assertIn("StopIteration", result)
+        self.assertIn("\033[", result)  # Should have color codes
+
+    def test_keyboard_interrupt(self):
+        from output_parser import colorize_error
+        text = "KeyboardInterrupt: user cancelled"
+        result = colorize_error(text)
+        self.assertIn("KeyboardInterrupt", result)
+        self.assertIn("\033[", result)
+
+    def test_system_exit(self):
+        from output_parser import colorize_error
+        text = "SystemExit: exit code 1"
+        result = colorize_error(text)
+        self.assertIn("SystemExit", result)
+        self.assertIn("\033[", result)
+
+
 if __name__ == '__main__':
     unittest.main()

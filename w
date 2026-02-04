@@ -236,8 +236,8 @@ run_tests() {
 
             # 1. GET FAIL LINE (in test) AND USER ERROR LOCATION (in user code)
             err_out=$(python3 custom/debug_this_test.py 2>&1)
-            fail_line=$(echo "$err_out" | grep -P "File \".*custom/debug_this_test.py\", line \d+, in $first_fail_method" | tail -n 1 | grep -oP 'line \K\d+')
-            if [ -z "$fail_line" ]; then fail_line=0; fi
+            fail_line=$(echo "$err_out" | python3 "$OUTPUT_PARSER" extract-fail-line "debug_this_test.py" "$first_fail_method" 2>/dev/null)
+            if [ -z "$fail_line" ] || [ "$fail_line" = "0" ]; then fail_line=0; fi
             first_fail_line="$fail_line"
 
             # Extract user code error location (file:line where exception originated)
@@ -382,6 +382,14 @@ launch_debugger() {
     # Show launching message
     printf '\033[2J\033[H'
     echo "${dim}Launching $debugger for $first_fail_method...${reset}"
+
+    # Clear stale breakpoints for debug_this_test.py BEFORE regenerating
+    # The file is regenerated every time with different line numbers, so
+    # saved breakpoints would point to wrong lines anyway
+    if [ -f "$PUDB_BP_FILE" ]; then
+        grep -v "debug_this_test.py" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && \
+            mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
+    fi
 
     # Generate single-method test file
     builder_output=$(python3 "$BUILDER" "$first_fail_file" "$first_fail_method" 2>&1)

@@ -32,7 +32,7 @@ def colorize_crash(text):
     crash_lines = lines[last_frame_start:] if last_frame_start != -1 else lines
     out = []
     for line in crash_lines:
-        match = re.search(r'(File ")(.*?)("\, line )(\d+)(, in )(.*)', line)
+        match = re.search(r'(File ")(.*?)(", line )(\d+)(, in )(.*)', line)
         if match:
             prefix, path, mid1, lineno, mid2, method = match.groups()
             out.append(f'  {prefix}\033[34m{path}\033[0m{mid1}\033[32m{lineno}\033[0m{mid2}\033[33m{method}\033[0m')
@@ -161,7 +161,7 @@ def colorize_error(text):
         if m3:
             out.append(f'  \033[1mExpected: \033[32m{m3.group(2)}\033[0m')
             continue
-        m4 = re.match(r'(\w+(?:Error|Exception)):\s*(.*)', line)
+        m4 = re.match(r'(\w+(?:Error|Exception|Interrupt|Iteration|Exit)):\s*(.*)', line)
         if m4:
             out.append(f'  \033[1;31m{m4.group(1)}:\033[0m {m4.group(2)}')
             continue
@@ -202,15 +202,62 @@ def extract_user_error_location(text, test_file):
     return None, None
 
 
+def extract_fail_line(text, target_file, method):
+    """Extract the line number from a traceback for a specific file and method.
+
+    Args:
+        text: Traceback text to parse
+        target_file: File path to match (matches basename)
+        method: Method name to match in the "in <method>" part
+
+    Returns:
+        Line number as int, or 0 if not found
+    """
+    # Pattern: File "...", line N, in method_name
+    # Use a pattern that handles:
+    # - Paths with various characters (but not unescaped quotes)
+    # - Method names that may contain brackets like test_foo[param]
+    frame_pattern = re.compile(
+        r'File "([^"]+)", line (\d+), in (.+?)$',
+        re.MULTILINE
+    )
+
+    target_basename = os.path.basename(target_file)
+    matches = []
+
+    for match in frame_pattern.finditer(text):
+        file_path, lineno, frame_method = match.groups()
+        frame_method = frame_method.strip()
+        file_basename = os.path.basename(file_path)
+
+        # Match by basename to handle different path representations
+        if file_basename == target_basename and frame_method == method:
+            matches.append(int(lineno))
+
+    # Return the last match (deepest frame in that file/method)
+    if matches:
+        return matches[-1]
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
-        print('Usage: output_parser.py {crash|source|trace|error|syntax}', file=sys.stderr)
+        print('Usage: output_parser.py {crash|source|trace|error|syntax|extract-fail-line|user-error-loc}', file=sys.stderr)
         sys.exit(1)
 
     cmd = sys.argv[1]
 
     if cmd == 'crash':
         print(colorize_crash(sys.stdin.read()))
+    elif cmd == 'extract-fail-line':
+        # Usage: output_parser.py extract-fail-line TARGET_FILE METHOD < traceback
+        if len(sys.argv) < 4:
+            print('Usage: output_parser.py extract-fail-line TARGET_FILE METHOD', file=sys.stderr)
+            sys.exit(1)
+        target_file = sys.argv[2]
+        method = sys.argv[3]
+        line = extract_fail_line(sys.stdin.read(), target_file, method)
+        print(line)
     elif cmd == 'user-error-loc':
         # Usage: output_parser.py user-error-loc TEST_FILE < traceback
         test_file = sys.argv[2] if len(sys.argv) > 2 else None
