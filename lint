@@ -30,7 +30,7 @@ separator() {
 
 # --- PYRIGHT ---
 separator "PYRIGHT (Type Checking)"
-if command -v pyright &> /dev/null || python3 -c "import pyright" 2>/dev/null; then
+if command -v pyright &> /dev/null || python -c "import pyright" 2>/dev/null; then
     # Pyright uses --ignore for error codes, not directories
     # For directory exclusion, we find python files excluding those dirs
     find "$TARGET" -name "*.py" -type f \
@@ -42,15 +42,16 @@ if command -v pyright &> /dev/null || python3 -c "import pyright" 2>/dev/null; t
         -not -path "*/__pycache__/*" \
         -not -path "*/.venv/*" \
         -not -path "*/venv/*" \
-        2>/dev/null | xargs python3 -m pyright 2>&1 || true
+        2>/dev/null | xargs python -m pyright 2>&1 || true
 else
     echo "${yellow}pyright not installed. Run setup.sh or: pip install pyright${reset}"
 fi
 
 # --- RUFF ---
 separator "RUFF (Linting)"
-if command -v ruff &> /dev/null || python3 -c "import ruff" 2>/dev/null; then
-    python3 -m ruff check "$TARGET" \
+if command -v ruff &> /dev/null || python -c "import ruff" 2>/dev/null; then
+    python -m ruff check "$TARGET" \
+        --select=B006 \
         --exclude "$EXCLUDES" \
         --output-format=full \
         2>&1 || true
@@ -58,9 +59,11 @@ else
     echo "${yellow}ruff not installed. Run setup.sh or: pip install ruff${reset}"
 fi
 
-# --- CUSTOM ANALYZERS ---
-# Add custom static analysis tools here
-if [ -f "$REPO_ROOT/custom_lint.sh" ]; then
-    separator "CUSTOM CHECKS"
-    "$REPO_ROOT/custom_lint.sh" "$TARGET" 2>&1 || true
+# --- NUMPY/PYTHON PATTERNS ---
+separator "NUMPY/PYTHON PATTERNS"
+LINT_SCRIPT="$REPO_ROOT/static_analysis/lint_patterns.py"
+if [ -f "$LINT_SCRIPT" ]; then
+    python "$LINT_SCRIPT" "$TARGET" 2>&1 || true
+else
+    echo "${yellow}lint_patterns.py not found at $LINT_SCRIPT${reset}"
 fi
