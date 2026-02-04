@@ -24,6 +24,11 @@ def neutralize_alarms(lines):
     return [re.sub(r'signal\.alarm\([^)]*\)', 'signal.alarm(0)', l) for l in lines]
 
 
+def _error_summary_print():
+    """Return code that prints the error summary file if it exists."""
+    return "import os as _os; _es='custom/.error_summary'; _os.path.exists(_es) and print(open(_es).read())"
+
+
 def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, user_error_line=None):
     """Return the set_trace injection string (no indent, no newline)."""
     if debugger == 'pdbpp':
@@ -33,6 +38,7 @@ def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, u
             parts.append(f'_dbg.set_break("{abs_path}", {bp_target})')
         if user_error_file and user_error_line:
             parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        parts.append(_error_summary_print())
         parts.append('pdb.set_trace()')
         return '; '.join(parts)
     else:
@@ -41,6 +47,7 @@ def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, u
             parts.append(f'_dbg.set_break("{abs_path}", {bp_target})')
         if user_error_file and user_error_line:
             parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        parts.append(_error_summary_print())
         parts.append('pudb.set_trace()')
         return '; '.join(parts)
 
@@ -56,6 +63,7 @@ def _trace_line_multi(debugger, abs_path=None, bp_targets=None, user_error_file=
                 parts.append(f'_dbg.set_break("{abs_path}", {bp})')
         if user_error_file and user_error_line:
             parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        parts.append(_error_summary_print())
         parts.append('pdb.set_trace()')
         return '; '.join(parts)
     else:
@@ -65,6 +73,7 @@ def _trace_line_multi(debugger, abs_path=None, bp_targets=None, user_error_file=
                 parts.append(f'_dbg.set_break("{abs_path}", {bp})')
         if user_error_file and user_error_line:
             parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        parts.append(_error_summary_print())
         parts.append('pudb.set_trace()')
         return '; '.join(parts)
 

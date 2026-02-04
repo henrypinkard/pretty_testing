@@ -404,6 +404,13 @@ launch_debugger() {
         return
     fi
 
+    # Write error summary to temp file for debug_prep to inject
+    if [ -n "$last_valid_detail" ]; then
+        echo -e "$last_valid_detail" > custom/.error_summary
+    else
+        rm -f custom/.error_summary
+    fi
+
     # Prepare debug version (prep + preflight + setUp fallback in one step)
     debug_args=(debug custom/debug_this_test.py --method "$first_fail_method" --fail-line "$first_fail_line" --debugger "$debugger")
     if [ -n "$user_error_file" ] && [ "$user_error_line" -gt 0 ]; then
@@ -420,13 +427,7 @@ launch_debugger() {
         fi
     fi
 
-    # Show error summary before launching debugger
-    # User can toggle back to this with Ctrl+X in pudb
     printf '\033[2J\033[3J\033[H'
-    if [ -n "$last_valid_detail" ]; then
-        echo -e "$last_valid_detail"
-        echo ""
-    fi
     python3 custom/debug_this_test.py
 
     run_tests

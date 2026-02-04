@@ -10,6 +10,19 @@ blue=$(tput setaf 4)
 yellow=$(tput setaf 3)
 green=$(tput setaf 2)
 
+# Install dependencies on first use
+install_if_missing() {
+    local pkg="$1"
+    if ! python3 -c "import $pkg" 2>/dev/null; then
+        echo "${yellow}Installing $pkg (first-time setup)...${reset}"
+        pip3 install "$pkg" 2>/dev/null || pip install "$pkg" 2>/dev/null || {
+            echo "${yellow}Warning: Failed to install $pkg. Some checks will be skipped.${reset}"
+            return 1
+        }
+    fi
+    return 0
+}
+
 # Determine what to analyze
 if [ -n "$1" ]; then
     TARGET="$1"
@@ -18,7 +31,7 @@ else
 fi
 
 # Directories to exclude
-EXCLUDES="tests,custom_tests,custom,pretty_testing,.git,__pycache__,.venv,venv"
+EXCLUDES="tests,test,custom_tests,custom,pretty_testing,static_analysis,.git,__pycache__,.venv,venv,test_*.py,*_test.py"
 
 separator() {
     echo ""
@@ -30,26 +43,28 @@ separator() {
 
 # --- PYRIGHT ---
 separator "PYRIGHT (Type Checking)"
-if command -v pyright &> /dev/null || python -c "import pyright" 2>/dev/null; then
+if install_if_missing pyright; then
     # Pyright uses --ignore for error codes, not directories
     # For directory exclusion, we find python files excluding those dirs
     find "$TARGET" -name "*.py" -type f \
         -not -path "*/tests/*" \
+        -not -path "*/test/*" \
         -not -path "*/custom_tests/*" \
         -not -path "*/custom/*" \
         -not -path "*/pretty_testing/*" \
+        -not -path "*/static_analysis/*" \
         -not -path "*/.git/*" \
         -not -path "*/__pycache__/*" \
         -not -path "*/.venv/*" \
         -not -path "*/venv/*" \
+        -not -name "test_*.py" \
+        -not -name "*_test.py" \
         2>/dev/null | xargs python -m pyright 2>&1 || true
-else
-    echo "${yellow}pyright not installed. Run setup.sh or: pip install pyright${reset}"
 fi
 
 # --- RUFF ---
 separator "RUFF (Linting)"
-if command -v ruff &> /dev/null || python -c "import ruff" 2>/dev/null; then
+if install_if_missing ruff; then
     # Use ruff.toml config if it exists in static_analysis directory
     RUFF_CONFIG="$REPO_ROOT/static_analysis/ruff.toml"
     if [ -f "$RUFF_CONFIG" ]; then
@@ -65,8 +80,6 @@ if command -v ruff &> /dev/null || python -c "import ruff" 2>/dev/null; then
             --output-format=full \
             2>&1 || true
     fi
-else
-    echo "${yellow}ruff not installed. Run setup.sh or: pip install ruff${reset}"
 fi
 
 # --- NUMPY/PYTHON PATTERNS ---
