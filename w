@@ -124,8 +124,8 @@ run_tests() {
 
         # Helper to redraw screen with current state (flicker-free)
         redraw_progress() {
-            # Move cursor to top, don't clear screen
-            printf '\033[H'
+            # Hide cursor, move to top, don't clear screen
+            printf '\033[?25l\033[H'
             # Clear line and print header
             printf '\033[K%s\n' "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
             for fl in "${file_order[@]}"; do
@@ -309,7 +309,7 @@ run_tests() {
 
 # --- 5. UI UPDATE ---
 draw_screen() {
-    printf '\033[2J\033[3J\033[H'
+    printf '\033[?25l\033[2J\033[3J\033[H'
 
     if [ "$is_syntax_error" = true ]; then
         echo "${bold}Last Run: $(date +"%H:%M:%S")${reset}"
@@ -426,21 +426,12 @@ launch_debugger() {
 
 
 last_checksum=""
-DEBUG_LOG="custom/w_debug.log"
-echo "=== w debug log started $(date) ===" > "$DEBUG_LOG"
-
-debug_log() {
-    echo "[$(date +%H:%M:%S.%N)] $1" >> "$DEBUG_LOG"
-}
-
 while true; do
     if read -rsn1 -t 1 key 2>/dev/null; then
         if [ "$key" = "d" ]; then
-            debug_log "Key 'd' pressed - launching pudb"
             launch_debugger pudb
             continue
         elif [ "$key" = "p" ]; then
-            debug_log "Key 'p' pressed - launching pdbpp"
             launch_debugger pdbpp
             continue
         fi
@@ -452,7 +443,6 @@ while true; do
         watch_dir="tests"
     fi
     # Only watch: root-level *.py files + watch_dir/*.py (not tool files, not custom/)
-    # Use find -print0 + xargs for consistent ordering, sort by full path
     watched_files=$(find . -maxdepth 1 -name "*.py" -type f 2>/dev/null; find "$watch_dir" -name "*.py" -type f 2>/dev/null)
     current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
     if [ "$current_checksum" != "$last_checksum" ]; then
@@ -461,16 +451,8 @@ while true; do
             sleep 0.1
             # Recompute checksum after delay to get final state
             current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
-            debug_log "Checksum changed - refreshing (watch_dir=$watch_dir)"
-            debug_log "  Old: $last_checksum"
-            debug_log "  New: $current_checksum"
-            # Log which files changed (sorted by filename)
-            debug_log "  Files checked (sorted by name):"
-            echo "$watched_files" | sort | xargs md5sum 2>/dev/null >> "$DEBUG_LOG"
             run_tests
             draw_screen
-        else
-            debug_log "Initial checksum set (watch_dir=$watch_dir): $current_checksum"
         fi
         last_checksum="$current_checksum"
     fi
