@@ -57,6 +57,9 @@ fi
 chmod +x "$KIT_ROOT/w"
 chmod +x "$KIT_ROOT/help"
 chmod +x "$KIT_ROOT/dbg"
+chmod +x "$KIT_ROOT/bp"
+chmod +x "$KIT_ROOT/skip"
+chmod +x "$KIT_ROOT/debug"
 
 # 5. Detect which shell config file to use (Zsh vs Bash)
 if [ -f "$HOME/.zshrc" ]; then
@@ -88,7 +91,7 @@ fi
 
 # Note: We added $KIT_ROOT to the path so python finds the file regardless of where you are
 if ! grep -q "alias d=" "$SHELL_CONFIG"; then
-    echo "alias d='python3 -m IPython --pdb $KIT_ROOT/custom/debug_this_test.py'" >> "$SHELL_CONFIG"
+    echo "alias d='python3 -m IPython --pdb $KIT_ROOT/_pretty_testing_/debug_this_test.py'" >> "$SHELL_CONFIG"
 fi
 
 if ! grep -q "alias h=" "$SHELL_CONFIG"; then
@@ -99,13 +102,28 @@ if ! grep -q "alias dbg=" "$SHELL_CONFIG"; then
     echo "alias dbg='$KIT_ROOT/dbg'" >> "$SHELL_CONFIG"
 fi
 
+if ! grep -q "alias bp=" "$SHELL_CONFIG"; then
+    echo "alias bp='$KIT_ROOT/bp'" >> "$SHELL_CONFIG"
+fi
+
+if ! grep -q "alias skip=" "$SHELL_CONFIG"; then
+    echo "alias skip='$KIT_ROOT/skip'" >> "$SHELL_CONFIG"
+fi
+
+if ! grep -q "alias debug=" "$SHELL_CONFIG"; then
+    echo "alias debug='$KIT_ROOT/debug'" >> "$SHELL_CONFIG"
+fi
+
 # 7. Also set them for the CURRENT session so they work right now
 alias t="$KIT_ROOT/t"
 alias w="$KIT_ROOT/w"
 alias da="$KIT_ROOT/da"
-alias d="python3 -m IPython --pdb $KIT_ROOT/custom/debug_this_test.py"
+alias d="python3 -m IPython --pdb $KIT_ROOT/_pretty_testing_/debug_this_test.py"
 alias h="$KIT_ROOT/help"
 alias dbg="$KIT_ROOT/dbg"
+alias bp="$KIT_ROOT/bp"
+alias skip="$KIT_ROOT/skip"
+alias debug="$KIT_ROOT/debug"
 
 echo "Debug Kit Loaded!"
 echo "Run 'w' to watch"

@@ -4,15 +4,30 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILDER="$REPO_ROOT/test_generator.py"
 OUTPUT_PARSER="$REPO_ROOT/output_parser.py"
 DEBUG_PREP="$REPO_ROOT/debug_prep.py"
-mkdir -p custom
+mkdir -p _pretty_testing_
 
 # --- 0. PARSE ARGS ---
 STOP_EARLY=false
+NO_REFRESH=false
+FAILED_ONLY=false
+CUSTOM_TEST_DIR=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --stop|-s)
             STOP_EARLY=true
             shift
+            ;;
+        --no-refresh|-n)
+            NO_REFRESH=true
+            shift
+            ;;
+        --failed|-f)
+            FAILED_ONLY=true
+            shift
+            ;;
+        --test-dir|-t)
+            CUSTOM_TEST_DIR="$2"
+            shift 2
             ;;
         *)
             shift
@@ -25,7 +40,7 @@ cat "$BUILDER" \
   | sed "s/debug_this_test_/watch_/g" \
   | sed "s/debug_this_test\\.py/watch_.py/g" \
   | sed "s/raise e/pass/g" \
-  > custom/make_watch_test.py
+  > _pretty_testing_/make_watch_test.py
 
 # --- 2. COLORS ---
 green=$(tput setaf 2)
@@ -52,6 +67,13 @@ user_error_file=""
 user_error_line=0
 # Track previous test results to detect status changes
 declare -A prev_test_status=()  # test_name -> "pass" or "fail"
+TEST_STATUS_FILE="_pretty_testing_/.test_status"
+# Load previous test status from file if it exists
+if [ -f "$TEST_STATUS_FILE" ]; then
+    while IFS='=' read -r name status; do
+        [ -n "$name" ] && prev_test_status["$name"]="$status"
+    done < "$TEST_STATUS_FILE"
+fi
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 last_debugged_method=""
 
@@ -65,7 +87,11 @@ run_tests() {
     declare -A cur_test_status=()
 
     # A. SELECT SOURCE
-    if [ -d "custom_tests" ] && ls custom_tests/*.py >/dev/null 2>&1; then
+    if [ -n "$CUSTOM_TEST_DIR" ]; then
+        # User specified a custom test directory with -t/--test-dir
+        test_source_dir="$CUSTOM_TEST_DIR"
+        display_source="TESTS ($test_source_dir)"
+    elif [ -d "custom_tests" ] && ls custom_tests/*.py >/dev/null 2>&1; then
         test_source_dir="custom_tests"
         display_source="CUSTOM TESTS ($test_source_dir)"
     else
@@ -90,10 +116,23 @@ run_tests() {
     fi
 
     # C. GENERATE RUNNERS
-    rm -f custom/watch_*.py
+    rm -f _pretty_testing_/watch_*.py
+
+    # Write skip list for failed-only mode
+    if [ "$FAILED_ONLY" = true ]; then
+        : > _pretty_testing_/.skip_tests
+        for key in "${!prev_test_status[@]}"; do
+            if [ "${prev_test_status[$key]}" = "pass" ]; then
+                echo "$key" >> _pretty_testing_/.skip_tests
+            fi
+        done
+    else
+        rm -f _pretty_testing_/.skip_tests
+    fi
+
     for f in "$test_source_dir"/*.py; do
         [ -f "$f" ] || continue
-        python3 custom/make_watch_test.py "$f" > /dev/null 2>&1
+        python3 _pretty_testing_/make_watch_test.py "$f" > /dev/null 2>&1
     done
 
     # D. SUCCESSFUL COMPILE
@@ -113,7 +152,7 @@ run_tests() {
     declare -a file_order
     declare -A file_tests
 
-    for watch_file in $(ls custom/watch_*.py 2>/dev/null | sort -V); do
+    for watch_file in $(ls _pretty_testing_/watch_*.py 2>/dev/null | sort -V); do
         file_label=$(basename "$watch_file" .py | sed 's/watch_//')
         file_order+=("$file_label")
         file_start=$(date +%s.%N)
@@ -235,13 +274,13 @@ run_tests() {
             python3 "$BUILDER" "$orig_file" "$first_fail_method" > /dev/null 2>&1
 
             # 1. GET FAIL LINE (in test) AND USER ERROR LOCATION (in user code)
-            err_out=$(python3 custom/debug_this_test.py 2>&1)
+            err_out=$(python3 _pretty_testing_/debug_this_test.py 2>&1)
             fail_line=$(echo "$err_out" | python3 "$OUTPUT_PARSER" extract-fail-line "debug_this_test.py" "$first_fail_method" 2>/dev/null)
             if [ -z "$fail_line" ] || [ "$fail_line" = "0" ]; then fail_line=0; fi
             first_fail_line="$fail_line"
 
             # Extract user code error location (file:line where exception originated)
-            user_error_loc=$(echo "$err_out" | python3 "$OUTPUT_PARSER" user-error-loc "custom/debug_this_test.py" 2>/dev/null)
+            user_error_loc=$(echo "$err_out" | python3 "$OUTPUT_PARSER" user-error-loc "_pretty_testing_/debug_this_test.py" 2>/dev/null)
             if [ -n "$user_error_loc" ]; then
                 user_error_file=$(echo "$user_error_loc" | cut -d: -f1)
                 user_error_line=$(echo "$user_error_loc" | cut -d: -f2)
@@ -251,10 +290,10 @@ run_tests() {
             fi
 
             # 2. EXTRACT SOURCE
-            source_and_error=$(python3 "$OUTPUT_PARSER" source custom/debug_this_test.py "$first_fail_method" "$fail_line" 2>/dev/null || echo "(source extraction failed)")
+            source_and_error=$(python3 "$OUTPUT_PARSER" source _pretty_testing_/debug_this_test.py "$first_fail_method" "$fail_line" 2>/dev/null || echo "(source extraction failed)")
 
             # 3. RUN AND PARSE EXECUTION LOG + ERROR
-            raw_trace=$(python3 custom/debug_this_test.py 2>&1)
+            raw_trace=$(python3 _pretty_testing_/debug_this_test.py 2>&1)
             parsed_sections=$(echo "$raw_trace" | python3 "$OUTPUT_PARSER" trace 2>/dev/null || echo "___SECTION_SEP___${raw_trace}___SECTION_SEP___")
             error_msg=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==2')
             exec_log=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==3')
@@ -308,6 +347,12 @@ run_tests() {
     for key in "${!cur_test_status[@]}"; do
         prev_test_status[$key]="${cur_test_status[$key]}"
     done
+
+    # Save test status to file for persistence across sessions
+    : > "$TEST_STATUS_FILE"  # truncate/create file
+    for key in "${!prev_test_status[@]}"; do
+        echo "${key}=${prev_test_status[$key]}" >> "$TEST_STATUS_FILE"
+    done
 }
 
 # --- 5. UI UPDATE ---
@@ -350,9 +395,18 @@ draw_screen() {
     echo ""
     local mode_info=""
     if [ "$STOP_EARLY" = true ]; then
-        mode_info="  ${yellow}[--stop]${reset}"
+        mode_info+="  ${yellow}[--stop]${reset}"
     fi
-    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  [q] quit  |  w -s (stop on first failure)${mode_info}${reset}"
+    if [ "$NO_REFRESH" = true ]; then
+        mode_info+="  ${yellow}[--no-refresh]${reset}"
+    fi
+    if [ "$FAILED_ONLY" = true ]; then
+        mode_info+="  ${yellow}[--failed]${reset}"
+    fi
+    if [ -n "$CUSTOM_TEST_DIR" ]; then
+        mode_info+="  ${yellow}[-t $CUSTOM_TEST_DIR]${reset}"
+    fi
+    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  [q] quit  |  -s -n -f -t DIR${mode_info}${reset}"
 }
 
 # --- 6. MAIN LOOP ---
@@ -372,11 +426,13 @@ launch_debugger() {
     last_debug_error=""
 
     if [ "$debugger" = "pudb" ]; then
-        # Fix theme in pudb config in case it got wiped by prefs save
+        # Fix theme and variable display in pudb config
         PUDB_CFG="$HOME/.config/pudb/pudb.cfg"
         if [ -f "$PUDB_CFG" ]; then
             DARCULA_PATH="$REPO_ROOT/darcula.py"
             sed -i "s|^theme =.*|theme = $DARCULA_PATH|" "$PUDB_CFG"
+            # Set variable representation to repr (shows actual values)
+            sed -i "s|^stringifier =.*|stringifier = repr|" "$PUDB_CFG"
         fi
     fi
 
@@ -406,13 +462,13 @@ launch_debugger() {
 
     # Write error summary to temp file for debug_prep to inject
     if [ -n "$last_valid_detail" ]; then
-        echo -e "$last_valid_detail" > custom/.error_summary
+        echo -e "$last_valid_detail" > _pretty_testing_/.error_summary
     else
-        rm -f custom/.error_summary
+        rm -f _pretty_testing_/.error_summary
     fi
 
     # Prepare debug version (prep + preflight + setUp fallback in one step)
-    debug_args=(debug custom/debug_this_test.py --method "$first_fail_method" --fail-line "$first_fail_line" --debugger "$debugger")
+    debug_args=(debug _pretty_testing_/debug_this_test.py --method "$first_fail_method" --fail-line "$first_fail_line" --debugger "$debugger")
     if [ -n "$user_error_file" ] && [ "$user_error_line" -gt 0 ]; then
         debug_args+=(--user-error-file "$user_error_file" --user-error-line "$user_error_line")
     fi
@@ -421,14 +477,14 @@ launch_debugger() {
     if [ $? -ne 0 ]; then
         # Last resort: inject a simple set_trace at top
         if [ "$debugger" = "pdbpp" ]; then
-            sed -i '1s/^/import pdb; pdb.set_trace()\n/' custom/debug_this_test.py 2>/dev/null
+            sed -i '1s/^/import pdb; pdb.set_trace()\n/' _pretty_testing_/debug_this_test.py 2>/dev/null
         else
-            sed -i '1s/^/import pudb; pudb.set_trace()\n/' custom/debug_this_test.py 2>/dev/null
+            sed -i '1s/^/import pudb; pudb.set_trace()\n/' _pretty_testing_/debug_this_test.py 2>/dev/null
         fi
     fi
 
     printf '\033[2J\033[3J\033[H'
-    python3 custom/debug_this_test.py
+    python3 _pretty_testing_/debug_this_test.py
 
     run_tests
     draw_screen
@@ -466,17 +522,21 @@ while true; do
     else
         watch_dir="tests"
     fi
-    # Only watch: root-level *.py files + watch_dir/*.py (not tool files, not custom/)
+    # Only watch: root-level *.py files + watch_dir/*.py (not tool files, not _pretty_testing_/)
     watched_files=$(find . -maxdepth 1 -name "*.py" -type f 2>/dev/null; find "$watch_dir" -name "*.py" -type f 2>/dev/null)
     current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
-    if [ "$current_checksum" != "$last_checksum" ]; then
+    if [ "$NO_REFRESH" = false ] && [ "$current_checksum" != "$last_checksum" ]; then
         if [ -n "$last_checksum" ]; then
             # Small delay to let file writes complete (avoid race with editor flush)
             sleep 0.1
             # Recompute checksum after delay to get final state
+            watched_files=$(find . -maxdepth 1 -name "*.py" -type f 2>/dev/null; find "$watch_dir" -name "*.py" -type f 2>/dev/null)
             current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
             run_tests
             draw_screen
+            # Recompute checksum AFTER run_tests to avoid double-refresh
+            watched_files=$(find . -maxdepth 1 -name "*.py" -type f 2>/dev/null; find "$watch_dir" -name "*.py" -type f 2>/dev/null)
+            current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
         fi
         last_checksum="$current_checksum"
     fi

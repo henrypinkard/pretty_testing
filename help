@@ -11,15 +11,78 @@ red=$(tput setaf 1)
 yellow=$(tput setaf 3)
 
 cat <<HELPTEXT
+${bold}=== W COMMAND LINE OPTIONS ===${reset}
+
+${bold}USAGE${reset}
+  ${bold}w${reset}              Run all tests, auto-refresh on file changes
+  ${bold}w -s${reset}           Stop on first failure (don't run remaining tests)
+  ${bold}w -f${reset}           Failed only — skip tests that previously passed
+  ${bold}w -n${reset}           No refresh — disable auto-refresh on file changes
+  ${bold}w -t DIR${reset}       Use DIR as test directory (overrides custom_tests/tests)
+  ${bold}w -s -f${reset}        Combine flags as needed
+
+${bold}FLAGS${reset}
+  ${green}-s, --stop${reset}       Stop after first test failure (per file)
+  ${green}-f, --failed${reset}    Only run tests that haven't passed yet
+                   (uses saved status from previous runs)
+  ${green}-n, --no-refresh${reset}
+                   Disable auto-refresh when files change
+                   (must restart w to see changes)
+  ${green}-t, --test-dir${reset}  Specify custom test directory
+                   (overrides custom_tests/ and tests/ detection)
+
+${bold}KEYBOARD SHORTCUTS (while w is running)${reset}
+  ${green}d${reset}   Debug first failing test with pudb
+  ${green}p${reset}   Debug first failing test with pdb++
+  ${green}q${reset}   Quit (or Ctrl+C)
+
+${bold}MODES EXPLAINED${reset}
+  ${dim}Default:${reset}       Run all tests in all files
+  ${dim}--stop:${reset}        Run tests until first failure, then stop
+  ${dim}--failed:${reset}      Skip tests marked "pass" in previous runs
+                   Great for re-running only broken tests
+
+${bold}TEST STATUS${reset}
+  Test results are saved to ${blue}_pretty_testing_/.test_status${reset}
+  Status changes are highlighted with ${bold}→${reset} arrows:
+    ${bold}${green}→ [PASS]${reset}  Test changed from fail to pass
+    ${bold}${red}→ [FAIL]${reset}  Test changed from pass to fail
+
+───────────────────────────────────────────────────
+
+${bold}=== BREAKPOINT MANAGEMENT ===${reset}
+
+${bold}bp${reset} - Add breakpoints to ANY file (source code or tests)
+  ${bold}bp add FILE LINE${reset}     Add breakpoint at FILE:LINE
+  ${bold}bp rm FILE LINE${reset}      Remove breakpoint at FILE:LINE
+  ${bold}bp list${reset}              List all manual breakpoints
+  ${bold}bp clear${reset}             Clear all manual breakpoints
+
+${bold}Examples:${reset}
+  ${bold}bp add solver.py 42${reset}         ${dim}# Stop at line 42 in solver.py${reset}
+  ${bold}bp add tests/test_foo.py 10${reset} ${dim}# Breakpoint in test file${reset}
+
+───────────────────────────────────────────────────
+
+${bold}=== TEST SKIP MANAGEMENT ===${reset}
+
+${bold}skip${reset} - Manually skip tests (show in dashboard but don't run)
+  ${bold}skip add TEST${reset}        Skip a test
+  ${bold}skip rm TEST${reset}         Unskip a test
+  ${bold}skip list${reset}            List all manually skipped tests
+  ${bold}skip clear${reset}           Clear all manual skips
+
+${bold}Examples:${reset}
+  ${bold}skip add test_slow_integration${reset}  ${dim}# Skip slow test${reset}
+  ${bold}skip rm test_slow_integration${reset}   ${dim}# Re-enable it${reset}
+
+───────────────────────────────────────────────────
+
 ${bold}=== PRETTY TESTING — EMERGENCY REFERENCE ===${reset}
 
 ${bold}${green}LEVEL 0: w is working${reset}
-  Just use it. Keys:
-    ${green}d${reset}  debug first failure with pudb
-    ${green}p${reset}  debug first failure with pdb++
-  Options:
-    ${bold}w${reset}       ${dim}# run all tests (default)${reset}
-    ${bold}w -s${reset}    ${dim}# stop on first failure${reset}
+  Just use it. Keys: ${green}d${reset} (pudb), ${green}p${reset} (pdb++), ${green}q${reset} (quit)
+  Options: ${bold}w -s${reset} (stop early), ${bold}w -f${reset} (failed only), ${bold}w -n${reset} (no refresh), ${bold}w -t DIR${reset}
   Tests come from ${blue}custom_tests/${reset} if it exists, otherwise ${blue}tests/${reset}.
 
 ${bold}${yellow}LEVEL 1: w is broken, but Python works${reset}
@@ -29,13 +92,19 @@ ${bold}${yellow}LEVEL 1: w is broken, but Python works${reset}
     ${bold}dbg tests/foo.py test_bar pdbpp${reset}   ${dim}# debug with pdb++${reset}
     ${bold}dbg custom_tests/foo.py${reset}           ${dim}# custom test dir${reset}
 
-${bold}${red}LEVEL 2: dbg is broken, do it by hand${reset}
+${bold}${red}LEVEL 1.5: dbg is broken, use failsafe debug${reset}
+  Ultra-minimal debugger that only depends on test_generator.py:
+    ${bold}debug tests/foo.py${reset}                ${dim}# run all tests (no debugger)${reset}
+    ${bold}debug tests/foo.py test_bar${reset}       ${dim}# debug with pudb${reset}
+    ${bold}debug tests/foo.py test_bar pdbpp${reset} ${dim}# debug with pdb++${reset}
+
+${bold}${red}LEVEL 2: debug is broken, do it by hand${reset}
   Two steps:
     ${bold}python3 ${KIT_ROOT}/test_generator.py tests/foo.py test_bar${reset}
-    ${bold}python3 custom/debug_this_test.py${reset}
+    ${bold}python3 _pretty_testing_/debug_this_test.py${reset}
   This runs the test with tracing. To debug, add one line before running:
-    ${bold}python3 ${KIT_ROOT}/debug_prep.py debug custom/debug_this_test.py --method test_bar${reset}
-    ${bold}python3 custom/debug_this_test.py${reset}
+    ${bold}python3 ${KIT_ROOT}/debug_prep.py debug _pretty_testing_/debug_this_test.py --method test_bar${reset}
+    ${bold}python3 _pretty_testing_/debug_this_test.py${reset}
 
 ${bold}${red}LEVEL 3: nothing works, nuclear fallback${reset}
   1. Open your test file
@@ -51,7 +120,7 @@ ${bold}${red}LEVEL 3: nothing works, nuclear fallback${reset}
 ${bold}QUICK DIAGNOSIS${reset}
   ${dim}Syntax error?${reset}       python3 -m py_compile your_file.py
   ${dim}Import crashing?${reset}    python3 -c "import your_module"
-  ${dim}setUp crashing?${reset}     python3 ${KIT_ROOT}/debug_prep.py debug custom/debug_this_test.py \\
+  ${dim}setUp crashing?${reset}     python3 ${KIT_ROOT}/debug_prep.py debug _pretty_testing_/debug_this_test.py \\
                         --method test_bar ${dim}# auto-detects and injects into setUp${reset}
   ${dim}Wrong tests?${reset}        Check header in w: [CUSTOM TESTS] vs [OFFICIAL TESTS]
                       w uses ${blue}custom_tests/${reset} if it exists, else ${blue}tests/${reset}

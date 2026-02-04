@@ -13,6 +13,8 @@ from debug_prep import (
     inject_setup_trace,
     patch_postmortem,
     run_preflight,
+    read_manual_breakpoints,
+    MANUAL_BP_FILE,
 )
 
 
@@ -385,7 +387,7 @@ class TestExtractUserErrorLocation(unittest.TestCase):
         from output_parser import extract_user_error_location
         traceback = """\
 Traceback (most recent call last):
-  File "custom/debug_this_test.py", line 10, in test_foo
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
     result = my_module.do_thing()
   File "/home/user/project/my_module.py", line 42, in do_thing
     raise ValueError("oops")
@@ -399,7 +401,7 @@ ValueError: oops
         from output_parser import extract_user_error_location
         traceback = """\
 Traceback (most recent call last):
-  File "custom/debug_this_test.py", line 10, in test_foo
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
     json.loads(bad)
   File "/usr/lib/python3.10/json/__init__.py", line 346, in loads
     return _default_decoder.decode(s)
@@ -412,7 +414,7 @@ JSONDecodeError: Expecting value
         from output_parser import extract_user_error_location
         traceback = """\
 Traceback (most recent call last):
-  File "custom/debug_this_test.py", line 10, in test_foo
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
     self.assertEqual(1, 2)
 AssertionError: 1 != 2
 """
@@ -427,7 +429,7 @@ class TestExtractFailLine(unittest.TestCase):
         from output_parser import extract_fail_line
         traceback = """\
 Traceback (most recent call last):
-  File "custom/debug_this_test.py", line 25, in test_foo
+  File "_pretty_testing_/debug_this_test.py", line 25, in test_foo
     self.assertEqual(1, 2)
 AssertionError: 1 != 2
 """
@@ -439,7 +441,7 @@ AssertionError: 1 != 2
         from output_parser import extract_fail_line
         traceback = """\
 Traceback (most recent call last):
-  File "custom/debug_this_test.py", line 42, in test_foo[param1-param2]
+  File "_pretty_testing_/debug_this_test.py", line 42, in test_foo[param1-param2]
     assert result == expected
 AssertionError
 """
@@ -451,11 +453,11 @@ AssertionError
         from output_parser import extract_fail_line
         traceback = """\
 Traceback (most recent call last):
-  File "custom/debug_this_test.py", line 10, in test_recursive
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_recursive
     self.helper()
-  File "custom/debug_this_test.py", line 15, in helper
+  File "_pretty_testing_/debug_this_test.py", line 15, in helper
     self.test_recursive()
-  File "custom/debug_this_test.py", line 20, in test_recursive
+  File "_pretty_testing_/debug_this_test.py", line 20, in test_recursive
     raise ValueError()
 ValueError
 """
@@ -478,7 +480,7 @@ ValueError
         from output_parser import extract_fail_line
         traceback = """\
 Traceback (most recent call last):
-  File "/home/user/project/custom/debug_this_test.py", line 33, in test_bar
+  File "/home/user/project/_pretty_testing_/debug_this_test.py", line 33, in test_bar
     assert False
 AssertionError
 """
@@ -510,6 +512,236 @@ class TestColorizeErrorExtended(unittest.TestCase):
         result = colorize_error(text)
         self.assertIn("SystemExit", result)
         self.assertIn("\033[", result)
+
+
+class TestManualBreakpoints(unittest.TestCase):
+    """Test manual breakpoint management."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.old_cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        os.makedirs('_pretty_testing_', exist_ok=True)
+
+    def tearDown(self):
+        os.chdir(self.old_cwd)
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def test_read_manual_breakpoints_empty(self):
+        """Returns empty list when no breakpoints file exists."""
+        bps = read_manual_breakpoints()
+        self.assertEqual(bps, [])
+
+    def test_read_manual_breakpoints_parses_file(self):
+        """Reads breakpoints from file in filepath:line format."""
+        bp_path = os.path.join('_pretty_testing_', '.manual_breakpoints')
+        with open(bp_path, 'w') as f:
+            f.write('/path/to/file.py:42\n')
+            f.write('/another/file.py:100\n')
+            f.write('\n')  # empty line should be skipped
+
+        bps = read_manual_breakpoints()
+        self.assertEqual(len(bps), 2)
+        self.assertEqual(bps[0], ('/path/to/file.py', 42))
+        self.assertEqual(bps[1], ('/another/file.py', 100))
+
+    def test_read_manual_breakpoints_handles_invalid_lines(self):
+        """Invalid lines (no colon, non-numeric line) are skipped."""
+        bp_path = os.path.join('_pretty_testing_', '.manual_breakpoints')
+        with open(bp_path, 'w') as f:
+            f.write('no_colon_here\n')
+            f.write('/valid/file.py:50\n')
+            f.write('/bad/line:notanumber\n')
+
+        bps = read_manual_breakpoints()
+        self.assertEqual(len(bps), 1)
+        self.assertEqual(bps[0], ('/valid/file.py', 50))
+
+    def test_inject_set_trace_includes_manual_breakpoints(self):
+        """Manual breakpoints are included in injected trace."""
+        bp_path = os.path.join('_pretty_testing_', '.manual_breakpoints')
+        with open(bp_path, 'w') as f:
+            f.write('/my/source.py:25\n')
+
+        lines = textwrap.dedent("""\
+            class TestFoo:
+                def test_bar(self):
+                    x = 1
+        """).splitlines(True)
+
+        result = inject_set_trace(lines, 'test_bar')
+        joined = ''.join(result)
+        self.assertIn('set_break("/my/source.py", 25)', joined)
+
+    def test_inject_setup_trace_includes_manual_breakpoints(self):
+        """Manual breakpoints are included when injecting into setUp."""
+        bp_path = os.path.join('_pretty_testing_', '.manual_breakpoints')
+        with open(bp_path, 'w') as f:
+            f.write('/my/source.py:30\n')
+
+        lines = textwrap.dedent("""\
+            class TestFoo:
+                def setUp(self):
+                    self.x = 1
+                def test_bar(self):
+                    pass
+        """).splitlines(True)
+
+        result = inject_setup_trace(lines)
+        joined = ''.join(result)
+        self.assertIn('set_break("/my/source.py", 30)', joined)
+
+
+class TestManualSkipIntegration(unittest.TestCase):
+    """Test that manual skip file is read by test_generator runner block."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.old_cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        os.makedirs('_pretty_testing_', exist_ok=True)
+        os.makedirs('tests', exist_ok=True)
+
+    def tearDown(self):
+        os.chdir(self.old_cwd)
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def test_manual_skip_file_format(self):
+        """Manual skip file contains one test name per line."""
+        skip_path = os.path.join('_pretty_testing_', '.manual_skip')
+        with open(skip_path, 'w') as f:
+            f.write('test_foo\n')
+            f.write('test_bar\n')
+
+        with open(skip_path) as f:
+            skipped = set(line.strip() for line in f if line.strip())
+
+        self.assertEqual(skipped, {'test_foo', 'test_bar'})
+
+
+class TestBpScript(unittest.TestCase):
+    """Test the bp script for breakpoint management."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.old_cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        os.makedirs('_pretty_testing_', exist_ok=True)
+        # Create a dummy file to add breakpoints to
+        with open('myfile.py', 'w') as f:
+            f.write('x = 1\n' * 50)
+
+    def tearDown(self):
+        os.chdir(self.old_cwd)
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def _run_bp(self, *args):
+        import subprocess
+        script_path = os.path.join(os.path.dirname(__file__), 'bp')
+        result = subprocess.run(
+            [script_path] + list(args),
+            capture_output=True, text=True, cwd=self.tmpdir
+        )
+        return result
+
+    def test_bp_add_creates_entry(self):
+        """bp add creates an entry in .manual_breakpoints."""
+        self._run_bp('add', 'myfile.py', '10')
+        bp_path = os.path.join('_pretty_testing_', '.manual_breakpoints')
+        with open(bp_path) as f:
+            content = f.read()
+        self.assertIn(':10', content)
+        self.assertIn('myfile.py', content)
+
+    def test_bp_rm_removes_entry(self):
+        """bp rm removes an entry from .manual_breakpoints."""
+        self._run_bp('add', 'myfile.py', '10')
+        self._run_bp('add', 'myfile.py', '20')
+        self._run_bp('rm', 'myfile.py', '10')
+
+        bp_path = os.path.join('_pretty_testing_', '.manual_breakpoints')
+        with open(bp_path) as f:
+            content = f.read()
+        self.assertNotIn(':10\n', content)
+        self.assertIn(':20', content)
+
+    def test_bp_clear_empties_file(self):
+        """bp clear removes all breakpoints."""
+        self._run_bp('add', 'myfile.py', '10')
+        self._run_bp('add', 'myfile.py', '20')
+        self._run_bp('clear')
+
+        bp_path = os.path.join('_pretty_testing_', '.manual_breakpoints')
+        self.assertFalse(os.path.exists(bp_path))
+
+    def test_bp_list_shows_breakpoints(self):
+        """bp list outputs current breakpoints."""
+        self._run_bp('add', 'myfile.py', '10')
+        result = self._run_bp('list')
+        self.assertIn('myfile.py', result.stdout)
+        self.assertIn('10', result.stdout)
+
+
+class TestSkipScript(unittest.TestCase):
+    """Test the skip script for test skip management."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.old_cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        os.makedirs('_pretty_testing_', exist_ok=True)
+
+    def tearDown(self):
+        os.chdir(self.old_cwd)
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def _run_skip(self, *args):
+        import subprocess
+        script_path = os.path.join(os.path.dirname(__file__), 'skip')
+        result = subprocess.run(
+            [script_path] + list(args),
+            capture_output=True, text=True, cwd=self.tmpdir
+        )
+        return result
+
+    def test_skip_add_creates_entry(self):
+        """skip add creates an entry in .manual_skip."""
+        self._run_skip('add', 'test_foo')
+        skip_path = os.path.join('_pretty_testing_', '.manual_skip')
+        with open(skip_path) as f:
+            content = f.read()
+        self.assertIn('test_foo', content)
+
+    def test_skip_rm_removes_entry(self):
+        """skip rm removes an entry from .manual_skip."""
+        self._run_skip('add', 'test_foo')
+        self._run_skip('add', 'test_bar')
+        self._run_skip('rm', 'test_foo')
+
+        skip_path = os.path.join('_pretty_testing_', '.manual_skip')
+        with open(skip_path) as f:
+            content = f.read()
+        self.assertNotIn('test_foo', content)
+        self.assertIn('test_bar', content)
+
+    def test_skip_clear_empties_file(self):
+        """skip clear removes all skips."""
+        self._run_skip('add', 'test_foo')
+        self._run_skip('add', 'test_bar')
+        self._run_skip('clear')
+
+        skip_path = os.path.join('_pretty_testing_', '.manual_skip')
+        self.assertFalse(os.path.exists(skip_path))
+
+    def test_skip_list_shows_skipped_tests(self):
+        """skip list outputs currently skipped tests."""
+        self._run_skip('add', 'test_foo')
+        result = self._run_skip('list')
+        self.assertIn('test_foo', result.stdout)
 
 
 if __name__ == '__main__':

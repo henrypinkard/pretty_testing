@@ -130,6 +130,18 @@ if __name__ == '__main__':
         print(f"[EXE] {{line}}")
         return audit_trace
 
+    # --- CHECK FOR SKIP LIST (failed-only mode + manual skips) ---
+    _skip_tests = set()
+    _skip_file = '_pretty_testing_/.skip_tests'
+    if os.path.exists(_skip_file):
+        with open(_skip_file) as _sf:
+            _skip_tests = set(line.strip() for line in _sf if line.strip())
+    # Also check for manual skip file
+    _manual_skip_file = '_pretty_testing_/.manual_skip'
+    if os.path.exists(_manual_skip_file):
+        with open(_manual_skip_file) as _msf:
+            _skip_tests.update(line.strip() for line in _msf if line.strip())
+
     # --- setUpModule ---
     if hasattr(current_module, 'setUpModule'):
         try:
@@ -146,6 +158,11 @@ if __name__ == '__main__':
     _teardown_classes = []
 
     for target_class, method_name in pairs:
+        # Skip tests that previously passed (failed-only mode)
+        if method_name in _skip_tests:
+            print("skipped:", method_name, flush=True)
+            continue
+
         # Skip all methods from a class whose setUpClass failed
         if target_class in _setup_failed:
             print("FAILED_METHOD:", method_name)
@@ -281,12 +298,12 @@ def main():
     if len(sys.argv) < 2: sys.exit(1)
     test_file = sys.argv[1]
     if len(sys.argv) == 3:
-        dest_file = os.path.join("custom", "debug_this_test.py")
+        dest_file = os.path.join("_pretty_testing_", "debug_this_test.py")
         only_test_method = sys.argv[2]
     else:
         base = os.path.basename(test_file)
         stem = os.path.splitext(base)[0]
-        dest_file = os.path.join("custom", f"debug_this_test_{stem}.py")
+        dest_file = os.path.join("_pretty_testing_", f"debug_this_test_{stem}.py")
         only_test_method = None
 
     generate_standalone_test(test_file, dest_file, only_test_method)

@@ -24,13 +24,40 @@ def neutralize_alarms(lines):
     return [re.sub(r'signal\.alarm\([^)]*\)', 'signal.alarm(0)', l) for l in lines]
 
 
+MANUAL_BP_FILE = '_pretty_testing_/.manual_breakpoints'
+
+
+def read_manual_breakpoints():
+    """Read manual breakpoints from file. Returns list of (filepath, line) tuples."""
+    if not os.path.exists(MANUAL_BP_FILE):
+        return []
+    breakpoints = []
+    with open(MANUAL_BP_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Format: filepath:line
+            if ':' in line:
+                parts = line.rsplit(':', 1)
+                if len(parts) == 2:
+                    filepath, lineno = parts
+                    try:
+                        breakpoints.append((filepath, int(lineno)))
+                    except ValueError:
+                        pass
+    return breakpoints
+
+
 def _error_summary_print():
     """Return code that prints the error summary file if it exists."""
-    return "import os as _os; _es='custom/.error_summary'; _os.path.exists(_es) and print(open(_es).read())"
+    return "import os as _os; _es='_pretty_testing_/.error_summary'; _os.path.exists(_es) and print(open(_es).read())"
 
 
-def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, user_error_line=None):
+def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, user_error_line=None,
+                manual_breakpoints=None):
     """Return the set_trace injection string (no indent, no newline)."""
+    manual_breakpoints = manual_breakpoints or []
     if debugger == 'pdbpp':
         sticky = "hasattr(pdb,'DefaultConfig') and setattr(pdb.DefaultConfig,'sticky_by_default',True); "
         parts = [f'import pdb; {sticky}_dbg = pdb.Pdb()']
@@ -38,6 +65,9 @@ def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, u
             parts.append(f'_dbg.set_break("{abs_path}", {bp_target})')
         if user_error_file and user_error_line:
             parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        # Add manual breakpoints
+        for bp_file, bp_line in manual_breakpoints:
+            parts.append(f'_dbg.set_break("{bp_file}", {bp_line})')
         parts.append(_error_summary_print())
         parts.append('pdb.set_trace()')
         return '; '.join(parts)
@@ -47,14 +77,19 @@ def _trace_line(debugger, abs_path=None, bp_target=None, user_error_file=None, u
             parts.append(f'_dbg.set_break("{abs_path}", {bp_target})')
         if user_error_file and user_error_line:
             parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        # Add manual breakpoints
+        for bp_file, bp_line in manual_breakpoints:
+            parts.append(f'_dbg.set_break("{bp_file}", {bp_line})')
         parts.append(_error_summary_print())
         parts.append('pudb.set_trace()')
         return '; '.join(parts)
 
 
-def _trace_line_multi(debugger, abs_path=None, bp_targets=None, user_error_file=None, user_error_line=None):
+def _trace_line_multi(debugger, abs_path=None, bp_targets=None, user_error_file=None, user_error_line=None,
+                      manual_breakpoints=None):
     """Return set_trace injection with multiple breakpoints (no indent, no newline)."""
     bp_targets = bp_targets or []
+    manual_breakpoints = manual_breakpoints or []
     if debugger == 'pdbpp':
         sticky = "hasattr(pdb,'DefaultConfig') and setattr(pdb.DefaultConfig,'sticky_by_default',True); "
         parts = [f'import pdb; {sticky}_dbg = pdb.Pdb()']
@@ -63,6 +98,9 @@ def _trace_line_multi(debugger, abs_path=None, bp_targets=None, user_error_file=
                 parts.append(f'_dbg.set_break("{abs_path}", {bp})')
         if user_error_file and user_error_line:
             parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        # Add manual breakpoints
+        for bp_file, bp_line in manual_breakpoints:
+            parts.append(f'_dbg.set_break("{bp_file}", {bp_line})')
         parts.append(_error_summary_print())
         parts.append('pdb.set_trace()')
         return '; '.join(parts)
@@ -73,6 +111,9 @@ def _trace_line_multi(debugger, abs_path=None, bp_targets=None, user_error_file=
                 parts.append(f'_dbg.set_break("{abs_path}", {bp})')
         if user_error_file and user_error_line:
             parts.append(f'_dbg.set_break("{user_error_file}", {user_error_line})')
+        # Add manual breakpoints
+        for bp_file, bp_line in manual_breakpoints:
+            parts.append(f'_dbg.set_break("{bp_file}", {bp_line})')
         parts.append(_error_summary_print())
         parts.append('pudb.set_trace()')
         return '; '.join(parts)
@@ -95,18 +136,23 @@ def inject_set_trace(lines, method, fail_line=0, abs_path=None, debugger='pudb',
     source = ''.join(cleaned)
     tree = ast.parse(source)
 
+    # Read manual breakpoints
+    manual_bps = read_manual_breakpoints()
+
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == method:
             body_line = node.body[0].lineno - 1
             indent = len(cleaned[body_line]) - len(cleaned[body_line].lstrip())
             pad = ' ' * indent
             bp_target = adj_fail + 1 if adj_fail > 0 else None
-            trace = _trace_line(debugger, abs_path, bp_target, user_error_file, user_error_line)
+            trace = _trace_line(debugger, abs_path, bp_target, user_error_file, user_error_line,
+                               manual_breakpoints=manual_bps)
             cleaned.insert(body_line, pad + trace + '\n')
             return cleaned
 
     # Fallback: method not found, inject at top
-    trace = _trace_line(debugger, user_error_file=user_error_file, user_error_line=user_error_line)
+    trace = _trace_line(debugger, user_error_file=user_error_file, user_error_line=user_error_line,
+                       manual_breakpoints=manual_bps)
     cleaned.insert(0, trace + '\n')
     return cleaned
 
@@ -154,6 +200,9 @@ def inject_setup_trace(lines, debugger='pudb', method=None, fail_line=0, abs_pat
     tree = ast.parse(source)
     result = list(lines)
 
+    # Read manual breakpoints
+    manual_bps = read_manual_breakpoints()
+
     # Find the target method's body start line (before any injection)
     method_body_line = None
     if method:
@@ -181,7 +230,8 @@ def inject_setup_trace(lines, debugger='pudb', method=None, fail_line=0, abs_pat
                 # Breakpoint at fail line (also +1 after injection)
                 bp_targets.append(fail_line + 1)
 
-            trace = _trace_line_multi(debugger, abs_path, bp_targets, user_error_file, user_error_line)
+            trace = _trace_line_multi(debugger, abs_path, bp_targets, user_error_file, user_error_line,
+                                      manual_breakpoints=manual_bps)
             result.insert(body_line, pad + trace + '\n')
             setup_found = True
             break
@@ -193,7 +243,8 @@ def inject_setup_trace(lines, debugger='pudb', method=None, fail_line=0, abs_pat
             bp_targets.append(method_body_line + 1)
         if fail_line and abs_path and fail_line != method_body_line:
             bp_targets.append(fail_line + 1)
-        trace = _trace_line_multi(debugger, abs_path, bp_targets, user_error_file, user_error_line)
+        trace = _trace_line_multi(debugger, abs_path, bp_targets, user_error_file, user_error_line,
+                                  manual_breakpoints=manual_bps)
         result.insert(0, trace + '\n')
 
     return result

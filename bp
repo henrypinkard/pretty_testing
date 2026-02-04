@@ -1,0 +1,100 @@
+#!/bin/bash
+# Manual breakpoint management for pretty_testing
+# Usage:
+#   bp add FILE LINE   - Add breakpoint at FILE:LINE
+#   bp rm FILE LINE    - Remove breakpoint at FILE:LINE
+#   bp list            - List all manual breakpoints
+#   bp clear           - Clear all manual breakpoints
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BP_FILE="_pretty_testing_/.manual_breakpoints"
+
+mkdir -p _pretty_testing_
+
+case "$1" in
+    add)
+        if [ $# -lt 3 ]; then
+            echo "Usage: bp add FILE LINE"
+            exit 1
+        fi
+        FILE="$2"
+        LINE="$3"
+        # Convert to absolute path if relative
+        if [[ "$FILE" != /* ]]; then
+            FILE="$(cd "$(dirname "$FILE")" 2>/dev/null && pwd)/$(basename "$FILE")"
+        fi
+        # Check if file exists
+        if [ ! -f "$FILE" ]; then
+            echo "Error: File '$2' not found"
+            exit 1
+        fi
+        # Check if line is a number
+        if ! [[ "$LINE" =~ ^[0-9]+$ ]]; then
+            echo "Error: LINE must be a number"
+            exit 1
+        fi
+        # Check if breakpoint already exists
+        if grep -qF "$FILE:$LINE" "$BP_FILE" 2>/dev/null; then
+            echo "Breakpoint already exists: $FILE:$LINE"
+            exit 0
+        fi
+        echo "$FILE:$LINE" >> "$BP_FILE"
+        echo "Added breakpoint: $FILE:$LINE"
+        ;;
+    rm)
+        if [ $# -lt 3 ]; then
+            echo "Usage: bp rm FILE LINE"
+            exit 1
+        fi
+        FILE="$2"
+        LINE="$3"
+        # Convert to absolute path if relative
+        if [[ "$FILE" != /* ]]; then
+            FILE="$(cd "$(dirname "$FILE")" 2>/dev/null && pwd)/$(basename "$FILE")"
+        fi
+        if [ ! -f "$BP_FILE" ]; then
+            echo "No breakpoints set"
+            exit 0
+        fi
+        # Remove the breakpoint
+        if grep -qF "$FILE:$LINE" "$BP_FILE" 2>/dev/null; then
+            grep -vF "$FILE:$LINE" "$BP_FILE" > "${BP_FILE}.tmp"
+            mv "${BP_FILE}.tmp" "$BP_FILE"
+            echo "Removed breakpoint: $FILE:$LINE"
+        else
+            echo "Breakpoint not found: $FILE:$LINE"
+        fi
+        ;;
+    list)
+        if [ ! -f "$BP_FILE" ] || [ ! -s "$BP_FILE" ]; then
+            echo "No manual breakpoints set"
+            exit 0
+        fi
+        echo "Manual breakpoints:"
+        while IFS=: read -r file line; do
+            [ -n "$file" ] && echo "  $file:$line"
+        done < "$BP_FILE"
+        ;;
+    clear)
+        if [ -f "$BP_FILE" ]; then
+            rm "$BP_FILE"
+            echo "All manual breakpoints cleared"
+        else
+            echo "No breakpoints to clear"
+        fi
+        ;;
+    *)
+        echo "Usage: bp {add|rm|list|clear}"
+        echo ""
+        echo "Commands:"
+        echo "  bp add FILE LINE   Add breakpoint at FILE:LINE"
+        echo "  bp rm FILE LINE    Remove breakpoint at FILE:LINE"
+        echo "  bp list            List all manual breakpoints"
+        echo "  bp clear           Clear all manual breakpoints"
+        echo ""
+        echo "Examples:"
+        echo "  bp add solver.py 42"
+        echo "  bp rm solver.py 42"
+        exit 1
+        ;;
+esac

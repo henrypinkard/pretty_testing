@@ -1,0 +1,81 @@
+#!/bin/bash
+# Ultra-minimal failsafe debug - only depends on test_generator.py
+# Use when w and dbg are broken
+#
+# Usage:
+#   debug tests/foo.py                    # Run all tests in file (no debugger)
+#   debug tests/foo.py test_bar           # Debug specific test with pudb
+#   debug tests/foo.py test_bar pdbpp     # Debug with pdb++
+
+set -e
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p _pretty_testing_
+
+if [ $# -lt 1 ]; then
+    echo "Usage: debug TEST_FILE [TEST_METHOD] [pudb|pdbpp]"
+    echo ""
+    echo "Ultra-minimal failsafe debugger - only depends on test_generator.py"
+    echo ""
+    echo "Examples:"
+    echo "  debug tests/foo.py                    # Run all tests (no debugger)"
+    echo "  debug tests/foo.py test_bar           # Debug test_bar with pudb"
+    echo "  debug tests/foo.py test_bar pdbpp     # Debug with pdb++"
+    exit 1
+fi
+
+TEST_FILE="$1"
+METHOD="${2:-}"
+DEBUGGER="${3:-pudb}"
+
+# If no method specified, run all tests in file (no debugger)
+if [ -z "$METHOD" ]; then
+    echo "Running all tests in $TEST_FILE..."
+    python3 "$REPO_ROOT/test_generator.py" "$TEST_FILE"
+    python3 _pretty_testing_/debug_this_test_*.py
+    exit 0
+fi
+
+echo "Generating test file..."
+python3 "$REPO_ROOT/test_generator.py" "$TEST_FILE" "$METHOD"
+
+# Inject set_trace at top of test method (simplest possible approach)
+# This is the failsafe - we don't use debug_prep.py
+echo "Injecting debugger ($DEBUGGER)..."
+
+# Use sed to inject set_trace after the method definition
+# macOS sed requires different syntax, so we use python for portability
+python3 << EOF
+import re
+
+with open('_pretty_testing_/debug_this_test.py', 'r') as f:
+    content = f.read()
+
+# Find the test method and inject set_trace at start of body
+debugger = "$DEBUGGER"
+method = "$METHOD"
+
+if debugger == 'pdbpp':
+    trace = "import pdb; pdb.set_trace()"
+else:
+    trace = "import pudb; pudb.set_trace()"
+
+# Pattern to find 'def test_method(self):' and inject after it
+# This handles both def method(self): and async def method(self):
+pattern = rf'(def {re.escape(method)}\s*\([^)]*\)\s*:)\n(\s+)'
+def replacer(m):
+    return m.group(1) + '\n' + m.group(2) + trace + '\n' + m.group(2)
+
+new_content = re.sub(pattern, replacer, content, count=1)
+
+# If pattern didn't match (maybe method not found), inject at top
+if new_content == content:
+    new_content = trace + '\n' + content
+
+with open('_pretty_testing_/debug_this_test.py', 'w') as f:
+    f.write(new_content)
+
+print(f"Injected {debugger} trace")
+EOF
+
+echo "Launching..."
+python3 _pretty_testing_/debug_this_test.py

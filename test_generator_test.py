@@ -18,7 +18,7 @@ class TestFileDiscovery(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.custom_dir = os.path.join(self.tmpdir, 'custom')
+        self.custom_dir = os.path.join(self.tmpdir, '_pretty_testing_')
         os.makedirs(self.custom_dir)
         self.tests_dir = os.path.join(self.tmpdir, 'tests')
         os.makedirs(self.tests_dir)
@@ -160,7 +160,7 @@ class TestUnittestPatterns(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.custom_dir = os.path.join(self.tmpdir, 'custom')
+        self.custom_dir = os.path.join(self.tmpdir, '_pretty_testing_')
         os.makedirs(self.custom_dir)
         self.tests_dir = os.path.join(self.tmpdir, 'tests')
         os.makedirs(self.tests_dir)
@@ -475,7 +475,7 @@ class TestWatchFileGeneration(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.custom_dir = os.path.join(self.tmpdir, 'custom')
+        self.custom_dir = os.path.join(self.tmpdir, '_pretty_testing_')
         os.makedirs(self.custom_dir)
         self.tests_dir = os.path.join(self.tmpdir, 'tests')
         os.makedirs(self.tests_dir)
