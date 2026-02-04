@@ -352,7 +352,7 @@ draw_screen() {
     if [ "$STOP_EARLY" = true ]; then
         mode_info="  ${yellow}[--stop]${reset}"
     fi
-    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  |  w -s (stop on first failure)${mode_info}${reset}"
+    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  [q] quit  |  w -s (stop on first failure)${mode_info}${reset}"
 }
 
 # --- 6. MAIN LOOP ---
@@ -447,6 +447,10 @@ while true; do
         elif [ "$key" = "p" ]; then
             launch_debugger pdbpp
             continue
+        elif [ "$key" = "q" ] || [ "$key" = $'\x03' ]; then
+            # q or Ctrl+C: quit
+            printf '\033[?25h\n'
+            exit 0
         fi
     fi
     # Determine test source dir for checksum (same logic as run_tests)
