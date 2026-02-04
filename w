@@ -420,7 +420,13 @@ launch_debugger() {
         fi
     fi
 
+    # Show error summary before launching debugger
+    # User can toggle back to this with Ctrl+X in pudb
     printf '\033[2J\033[3J\033[H'
+    if [ -n "$last_valid_detail" ]; then
+        echo -e "$last_valid_detail"
+        echo ""
+    fi
     python3 custom/debug_this_test.py
 
     run_tests

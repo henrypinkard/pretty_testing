@@ -519,6 +519,7 @@ def scan_file(filepath: Path) -> List[LintIssue]:
 # Directories to exclude by default when scanning
 DEFAULT_EXCLUDES = {
     'tests', 'test', 'custom_tests', 'custom',
+    'pretty_testing', 'static_analysis',  # exclude the linter's own directory
     '.git', '__pycache__', '.venv', 'venv', 'env',
     'node_modules', '.tox', '.pytest_cache', '.mypy_cache',
     'build', 'dist', 'egg-info', '.eggs',
