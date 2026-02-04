@@ -79,7 +79,8 @@ REGEX_PATTERNS = {
         "severity": "WARNING"
     },
     "where_nonzero_not_indexed": {
-        "pattern": r"(?<![=,])\s*np\.(where|nonzero)\s*\(\s*[^,)]+\s*\)(?!\s*\[)(?=\s*$|\s*#)",
+        # Only flag when result is not assigned (bare expression) - if assigned, user may index later
+        "pattern": r"^\s+np\.(where|nonzero)\s*\(\s*[^,)]+\s*\)\s*(?:#.*)?$",
         "message": "returns tuple of arrays, not array - use [0] for 1D or unpack for 2D",
         "severity": "WARNING"
     },
@@ -515,13 +516,38 @@ def scan_file(filepath: Path) -> List[LintIssue]:
     return unique_issues
 
 
-def scan_directory(dirpath: Path, recursive: bool = True) -> Dict[str, List[LintIssue]]:
+# Directories to exclude by default when scanning
+DEFAULT_EXCLUDES = {
+    'tests', 'test', 'custom_tests', 'custom',
+    '.git', '__pycache__', '.venv', 'venv', 'env',
+    'node_modules', '.tox', '.pytest_cache', '.mypy_cache',
+    'build', 'dist', 'egg-info', '.eggs',
+}
+
+
+def should_exclude(filepath: Path, excludes: Set[str]) -> bool:
+    """Check if filepath should be excluded based on directory names or filename patterns."""
+    parts = filepath.parts
+    for part in parts:
+        if part in excludes or part.endswith('.egg-info'):
+            return True
+    # Also exclude test files (test_*.py, *_test.py)
+    name = filepath.name
+    if name.startswith('test_') or name.endswith('_test.py'):
+        return True
+    return False
+
+
+def scan_directory(dirpath: Path, recursive: bool = True, excludes: Optional[Set[str]] = None) -> Dict[str, List[LintIssue]]:
     """Scan all Python files in a directory."""
+    if excludes is None:
+        excludes = DEFAULT_EXCLUDES
+
     results = {}
 
     pattern = "**/*.py" if recursive else "*.py"
     for filepath in dirpath.glob(pattern):
-        if filepath.is_file():
+        if filepath.is_file() and not should_exclude(filepath, excludes):
             issues = scan_file(filepath)
             if issues:
                 results[str(filepath)] = issues

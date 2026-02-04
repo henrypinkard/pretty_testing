@@ -100,9 +100,15 @@ class TestRegexPatterns(unittest.TestCase):
 
     # where/nonzero not indexed tests
     def test_where_not_indexed(self):
-        """Should catch np.where() result not being indexed"""
-        # This is tricky - the pattern looks for single-arg where not followed by [
-        self.check_pattern("result = np.where(arr > 0)", "where_nonzero_not_indexed", True)
+        """Should catch np.where() result being discarded (bare expression)"""
+        # Only flag when result is not assigned - bare expression is definitely a bug
+        self.check_pattern("    np.where(arr > 0)", "where_nonzero_not_indexed", True)
+        self.check_pattern("    np.nonzero(arr > 0)", "where_nonzero_not_indexed", True)
+
+    def test_where_assigned_ok(self):
+        """Should NOT flag np.where when assigned (user may index later)"""
+        self.check_pattern("result = np.where(arr > 0)", "where_nonzero_not_indexed", False)
+        self.check_pattern("o = np.nonzero(arr > 0)", "where_nonzero_not_indexed", False)
 
     def test_where_indexed_ok(self):
         """Should NOT flag np.where when properly used"""

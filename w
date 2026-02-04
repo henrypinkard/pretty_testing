@@ -293,7 +293,10 @@ run_tests() {
         done
         if [ "$method_still_failing" = false ]; then
             # Remove breakpoints from the test file
-            grep -v "custom/debug_this_test.py" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
+            # Note: grep -v returns exit code 1 when no lines are output (all filtered),
+            # so we use || true to ensure mv always runs
+            { grep -v "debug_this_test.py" "$PUDB_BP_FILE" || true; } > "${PUDB_BP_FILE}.tmp" 2>/dev/null
+            mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
             last_debugged_method=""
         fi
     fi
@@ -387,8 +390,10 @@ launch_debugger() {
     # The file is regenerated every time with different line numbers, so
     # saved breakpoints would point to wrong lines anyway
     if [ -f "$PUDB_BP_FILE" ]; then
-        grep -v "debug_this_test.py" "$PUDB_BP_FILE" > "${PUDB_BP_FILE}.tmp" 2>/dev/null && \
-            mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
+        # Note: grep -v returns exit code 1 when no lines are output (all filtered),
+        # so we use || true to ensure mv always runs
+        { grep -v "debug_this_test.py" "$PUDB_BP_FILE" || true; } > "${PUDB_BP_FILE}.tmp" 2>/dev/null
+        mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
     fi
 
     # Generate single-method test file

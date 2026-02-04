@@ -50,11 +50,21 @@ fi
 # --- RUFF ---
 separator "RUFF (Linting)"
 if command -v ruff &> /dev/null || python -c "import ruff" 2>/dev/null; then
-    python -m ruff check "$TARGET" \
-        --select=B006 \
-        --exclude "$EXCLUDES" \
-        --output-format=full \
-        2>&1 || true
+    # Use ruff.toml config if it exists in static_analysis directory
+    RUFF_CONFIG="$REPO_ROOT/static_analysis/ruff.toml"
+    if [ -f "$RUFF_CONFIG" ]; then
+        python -m ruff check "$TARGET" \
+            --config "$RUFF_CONFIG" \
+            --exclude "$EXCLUDES" \
+            --output-format=full \
+            2>&1 || true
+    else
+        python -m ruff check "$TARGET" \
+            --select=B006 \
+            --exclude "$EXCLUDES" \
+            --output-format=full \
+            2>&1 || true
+    fi
 else
     echo "${yellow}ruff not installed. Run setup.sh or: pip install ruff${reset}"
 fi
