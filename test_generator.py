@@ -229,15 +229,44 @@ if __name__ == '__main__':
                 try:
                     tb = traceback.extract_tb(e.__traceback__)
                     if tb:
-                        # Walk backwards to find the frame in the user's test file,
-                        # not inside unittest internals like case.py
-                        frame = tb[-1]
-                        for f in reversed(tb):
-                            if f.filename == __file__ or 'debug_this_test' in os.path.basename(f.filename) or 'watch_' in os.path.basename(f.filename):
-                                frame = f
-                                break
-                        filename = os.path.basename(frame.filename)
-                        print(f"File \\"{{filename}}\\", line {{frame.lineno}}")
+                        # Helper to check if path is stdlib or third-party
+                        def _is_stdlib(path):
+                            if path.startswith('<'):
+                                return True
+                            if '/lib/python' in path or '\\\\lib\\\\python' in path:
+                                return True
+                            if 'site-packages' in path or 'dist-packages' in path:
+                                return True
+                            return False
+
+                        # Extract relevant frames: test file + user code, stop at stdlib
+                        relevant_frames = []
+                        for f in tb:
+                            fn = os.path.basename(f.filename)
+                            is_test_file = f.filename == __file__ or 'debug_this_test' in fn or 'watch_' in fn
+                            is_stdlib = _is_stdlib(f.filename)
+                            # Skip runner code (<module>) from test file
+                            is_runner = is_test_file and f.name == '<module>'
+
+                            if is_runner:
+                                # Skip runner frames
+                                continue
+                            elif is_test_file:
+                                relevant_frames.append(f)
+                            elif is_stdlib:
+                                # Stop at stdlib - don't include these frames
+                                if relevant_frames:
+                                    break
+                            else:
+                                # User code - include it
+                                relevant_frames.append(f)
+
+                        # Print all relevant frames
+                        for f in relevant_frames:
+                            filename = os.path.basename(f.filename)
+                            print(f"File \\"{{filename}}\\", line {{f.lineno}}, in {{f.name}}")
+                            if f.line:
+                                print(f"    {{f.line}}")
                 except:
                     pass
 

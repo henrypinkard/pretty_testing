@@ -176,6 +176,85 @@ def colorize_syntax(text):
     return text
 
 
+def _is_stdlib_or_thirdparty(path):
+    """Check if a path is stdlib or third-party (site-packages)."""
+    if path.startswith('<'):  # <string>, <frozen>, etc.
+        return True
+    if '/lib/python' in path or '\\lib\\python' in path:
+        return True
+    if 'site-packages' in path or 'dist-packages' in path:
+        return True
+    return False
+
+
+def extract_relevant_traceback(text, test_file):
+    """Extract relevant frames from traceback: test file + user code, excluding stdlib.
+
+    Returns a list of (file_path, line_number, method_name) tuples representing
+    the relevant portion of the stack trace.
+
+    The logic:
+    1. Include frames from the test file (but NOT <module> runner frames)
+    2. Include frames from user code (not stdlib, not site-packages)
+    3. Stop once we encounter stdlib/third-party code (don't include those frames)
+
+    This way:
+    - If assertion fails in test: returns just the test frame
+    - If user code raises: returns test frame + chain of user code frames
+    - If user code calls stdlib and stdlib raises: returns test + user code, NOT stdlib
+    """
+    # Parse traceback frames: File "path", line N, in method
+    frame_pattern = re.compile(
+        r'File "([^"]+)", line (\d+), in (.+?)$',
+        re.MULTILINE
+    )
+
+    all_frames = []
+    for match in frame_pattern.finditer(text):
+        file_path, lineno, method = match.groups()
+        all_frames.append((file_path, int(lineno), method.strip()))
+
+    if not all_frames:
+        return []
+
+    test_basename = os.path.basename(test_file) if test_file else None
+    relevant_frames = []
+
+    for frame in all_frames:
+        file_path, lineno, method = frame
+        file_basename = os.path.basename(file_path)
+
+        # Is this the test file?
+        is_test_file = test_basename and (
+            file_basename == test_basename or
+            'debug_this_test' in file_basename or
+            'watch_' in file_basename
+        )
+
+        # Is this stdlib or third-party?
+        is_stdlib = _is_stdlib_or_thirdparty(file_path)
+
+        # Skip runner code (<module>) from test file
+        is_runner = is_test_file and method == '<module>'
+
+        if is_runner:
+            # Skip runner frames
+            continue
+        elif is_test_file:
+            # Include test file frames (actual test methods)
+            relevant_frames.append(frame)
+        elif is_stdlib:
+            # Stop when we hit stdlib/third-party - don't include these frames
+            # But only break if we've already seen at least one frame
+            if relevant_frames:
+                break
+        else:
+            # User code - include it
+            relevant_frames.append(frame)
+
+    return relevant_frames
+
+
 def extract_user_error_location(text, test_file):
     """Extract file:line from traceback for the deepest frame NOT in test_file or stdlib.
 
@@ -242,13 +321,19 @@ def extract_fail_line(text, target_file, method):
 
 def main():
     if len(sys.argv) < 2:
-        print('Usage: output_parser.py {crash|source|trace|error|syntax|extract-fail-line|user-error-loc}', file=sys.stderr)
+        print('Usage: output_parser.py {crash|source|trace|error|syntax|extract-fail-line|user-error-loc|relevant-tb}', file=sys.stderr)
         sys.exit(1)
 
     cmd = sys.argv[1]
 
     if cmd == 'crash':
         print(colorize_crash(sys.stdin.read()))
+    elif cmd == 'relevant-tb':
+        # Usage: output_parser.py relevant-tb TEST_FILE < traceback
+        test_file = sys.argv[2] if len(sys.argv) > 2 else None
+        frames = extract_relevant_traceback(sys.stdin.read(), test_file)
+        for path, lineno, method in frames:
+            print(f'File "{path}", line {lineno}, in {method}')
     elif cmd == 'extract-fail-line':
         # Usage: output_parser.py extract-fail-line TARGET_FILE METHOD < traceback
         if len(sys.argv) < 4:

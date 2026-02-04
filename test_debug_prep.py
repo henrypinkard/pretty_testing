@@ -422,6 +422,160 @@ AssertionError: 1 != 2
         self.assertIsNone(path)
 
 
+class TestExtractRelevantTraceback(unittest.TestCase):
+    """Test output_parser.extract_relevant_traceback for proper stack trace display."""
+
+    def test_assertion_in_test_only(self):
+        """When assertion fails directly in test, return just the test frame."""
+        from output_parser import extract_relevant_traceback
+        traceback = """\
+Traceback (most recent call last):
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
+    self.assertEqual(1, 2)
+AssertionError: 1 != 2
+"""
+        frames = extract_relevant_traceback(traceback, "debug_this_test.py")
+        self.assertEqual(len(frames), 1)
+        self.assertIn("debug_this_test.py", frames[0][0])
+        self.assertEqual(frames[0][1], 10)
+        self.assertEqual(frames[0][2], "test_foo")
+
+    def test_exception_in_user_code_single_level(self):
+        """Test calls user code, user code raises - show test + user code."""
+        from output_parser import extract_relevant_traceback
+        traceback = """\
+Traceback (most recent call last):
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
+    result = my_module.calculate()
+  File "/home/user/project/my_module.py", line 25, in calculate
+    raise ValueError("bad")
+ValueError: bad
+"""
+        frames = extract_relevant_traceback(traceback, "debug_this_test.py")
+        self.assertEqual(len(frames), 2)
+        # First frame: test file
+        self.assertIn("debug_this_test.py", frames[0][0])
+        self.assertEqual(frames[0][1], 10)
+        # Second frame: user code
+        self.assertEqual(frames[1][0], "/home/user/project/my_module.py")
+        self.assertEqual(frames[1][1], 25)
+        self.assertEqual(frames[1][2], "calculate")
+
+    def test_exception_in_user_code_multiple_levels(self):
+        """Test → user func → user func → raises - show all user frames."""
+        from output_parser import extract_relevant_traceback
+        traceback = """\
+Traceback (most recent call last):
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
+    result = my_module.calculate()
+  File "/home/user/project/my_module.py", line 25, in calculate
+    return helper()
+  File "/home/user/project/my_module.py", line 50, in helper
+    raise ValueError("deep error")
+ValueError: deep error
+"""
+        frames = extract_relevant_traceback(traceback, "debug_this_test.py")
+        self.assertEqual(len(frames), 3)
+        self.assertIn("debug_this_test.py", frames[0][0])
+        self.assertEqual(frames[1][1], 25)
+        self.assertEqual(frames[1][2], "calculate")
+        self.assertEqual(frames[2][1], 50)
+        self.assertEqual(frames[2][2], "helper")
+
+    def test_exception_in_stdlib_stops_at_user_code(self):
+        """Test → user code → stdlib raises - show test + user code, NOT stdlib."""
+        from output_parser import extract_relevant_traceback
+        traceback = """\
+Traceback (most recent call last):
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
+    result = my_module.parse_data(bad_json)
+  File "/home/user/project/my_module.py", line 25, in parse_data
+    return json.loads(data)
+  File "/usr/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/usr/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+JSONDecodeError: Expecting value
+"""
+        frames = extract_relevant_traceback(traceback, "debug_this_test.py")
+        self.assertEqual(len(frames), 2)
+        # Should include test + user code, but NOT json stdlib frames
+        self.assertIn("debug_this_test.py", frames[0][0])
+        self.assertEqual(frames[1][0], "/home/user/project/my_module.py")
+        self.assertEqual(frames[1][1], 25)
+        # Should NOT include any stdlib frames
+        for frame in frames:
+            self.assertNotIn("/usr/lib/python", frame[0])
+
+    def test_exception_in_nested_user_then_stdlib(self):
+        """Test → user1 → user2 → stdlib - show test + user1 + user2, NOT stdlib."""
+        from output_parser import extract_relevant_traceback
+        traceback = """\
+Traceback (most recent call last):
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
+    my_module.outer()
+  File "/home/user/project/my_module.py", line 20, in outer
+    inner()
+  File "/home/user/project/my_module.py", line 30, in inner
+    os.path.exists(None)
+  File "/usr/lib/python3.10/genericpath.py", line 19, in exists
+    os.stat(path)
+TypeError: stat: path should be string, bytes, os.PathLike or integer
+"""
+        frames = extract_relevant_traceback(traceback, "debug_this_test.py")
+        self.assertEqual(len(frames), 3)
+        self.assertIn("debug_this_test.py", frames[0][0])
+        self.assertEqual(frames[1][2], "outer")
+        self.assertEqual(frames[2][2], "inner")
+
+    def test_handles_site_packages(self):
+        """User code calls third-party library - include user, exclude third-party."""
+        from output_parser import extract_relevant_traceback
+        traceback = """\
+Traceback (most recent call last):
+  File "_pretty_testing_/debug_this_test.py", line 10, in test_foo
+    my_module.use_numpy()
+  File "/home/user/project/my_module.py", line 25, in use_numpy
+    np.array(None).reshape(-1)
+  File "/home/user/.local/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 285, in reshape
+    return _wrapfunc(a, 'reshape', newshape, order=order)
+ValueError: cannot reshape
+"""
+        frames = extract_relevant_traceback(traceback, "debug_this_test.py")
+        self.assertEqual(len(frames), 2)
+        self.assertIn("debug_this_test.py", frames[0][0])
+        self.assertEqual(frames[1][0], "/home/user/project/my_module.py")
+        # Should NOT include numpy frames
+        for frame in frames:
+            self.assertNotIn("site-packages", frame[0])
+
+    def test_excludes_module_runner_frames(self):
+        """Runner code (<module>) in test file should be excluded."""
+        from output_parser import extract_relevant_traceback
+        traceback = """\
+Traceback (most recent call last):
+  File "_pretty_testing_/debug_this_test.py", line 172, in <module>
+    _method_func()
+  File "_pretty_testing_/debug_this_test.py", line 38, in test_user_code_error
+    my_module.outer()
+  File "/home/user/project/my_module.py", line 2, in outer
+    return inner()
+  File "/home/user/project/my_module.py", line 5, in inner
+    raise ValueError("error")
+ValueError: error
+"""
+        frames = extract_relevant_traceback(traceback, "debug_this_test.py")
+        # Should have 3 frames: test_user_code_error, outer, inner
+        # Should NOT include the <module> frame
+        self.assertEqual(len(frames), 3)
+        self.assertEqual(frames[0][2], "test_user_code_error")
+        self.assertEqual(frames[1][2], "outer")
+        self.assertEqual(frames[2][2], "inner")
+        # Verify no <module> frame
+        for frame in frames:
+            self.assertNotEqual(frame[2], "<module>")
+
+
 class TestExtractFailLine(unittest.TestCase):
     """Test output_parser.extract_fail_line."""
 
