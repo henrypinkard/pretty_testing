@@ -282,17 +282,21 @@ if __name__ == '__main__':
                             else:
                                 relevant_frames.append(f)
 
-                        # Print stack trace with increasing indentation
+                        # Print stack trace with compact tree connectors
                         print(f"{{_c_dim}}Traceback (from test to error):{{_c_reset}}")
                         for i, f in enumerate(relevant_frames):
                             filename = os.path.basename(f.filename)
-                            indent = "    " * i  # 4 spaces per level
-                            # Colorized frame header
-                            print(f"{{indent}}{{_c_blue}}{{filename}}{{_c_reset}}:{{_c_green}}{{f.lineno}}{{_c_reset}} in {{_c_yellow}}{{f.name}}{{_c_reset}}")
+                            indent = "  " * i
+                            is_last = (i == len(relevant_frames) - 1)
+
+                            # Frame header (with arrow prefix if not first)
+                            if i == 0:
+                                print(f"{{_c_blue}}{{filename}}{{_c_reset}}:{{_c_green}}{{f.lineno}}{{_c_reset}} in {{_c_yellow}}{{f.name}}{{_c_reset}}")
+                            else:
+                                print(f"{{indent}}{{_c_dim}}└►{{_c_reset}} {{_c_blue}}{{filename}}{{_c_reset}}:{{_c_green}}{{f.lineno}}{{_c_reset}} in {{_c_yellow}}{{f.name}}{{_c_reset}}")
                             if f.line:
-                                code_indent = "    " * i + "  "  # same level + 2 for code
                                 highlighted = _highlight_code(f.line)
-                                print(f"{{code_indent}}{{highlighted}}")
+                                print(f"{{indent}}   {{highlighted}}")
                         print()  # blank line before error
                 except:
                     pass
