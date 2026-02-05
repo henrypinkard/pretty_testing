@@ -34,6 +34,20 @@ while [[ $# -gt 0 ]]; do
             TEST_TIMEOUT="$2"
             shift 2
             ;;
+        -[sfn]*)
+            # Handle combined short flags like -sf, -fs, -sfn, etc.
+            flags="${1#-}"
+            shift
+            while [ -n "$flags" ]; do
+                c="${flags%"${flags#?}"}"
+                flags="${flags#?}"
+                case "$c" in
+                    s) STOP_EARLY=true ;;
+                    f) FAILED_ONLY=true ;;
+                    n) NO_REFRESH=true ;;
+                esac
+            done
+            ;;
         *)
             shift
             ;;
@@ -178,6 +192,10 @@ if errors:
             fi
         fi
         python3 _pretty_testing_/make_watch_test.py "$f" > /dev/null 2>&1
+        # -sf combo: only need the first file with failures
+        if [ "$FAILED_ONLY" = true ] && [ "$STOP_EARLY" = true ]; then
+            break
+        fi
     done
 
     # D. SUCCESSFUL COMPILE
