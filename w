@@ -406,7 +406,7 @@ draw_screen() {
     if [ -n "$CUSTOM_TEST_DIR" ]; then
         mode_info+="  ${yellow}[-t $CUSTOM_TEST_DIR]${reset}"
     fi
-    echo "${dim}  [d] PUDB  [p] PDB++  [q] Quit  |  -s stop@fail  -n no-refresh  -f failed-only  -t <dir>${mode_info}${reset}"
+    echo "${dim}  [d] PUDB  [p] PDB++  [q] Quit  |  -s stop@fail  -f failed-only  -n no-refresh  -t <dir>${mode_info}${reset}"
 }
 
 # --- 6. MAIN LOOP ---
@@ -432,7 +432,7 @@ launch_debugger() {
             DARCULA_PATH="$REPO_ROOT/darcula.py"
             sed -i "s|^theme =.*|theme = $DARCULA_PATH|" "$PUDB_CFG"
             # Set variable representation to repr (shows actual values)
-            sed -i "s|^stringifier =.*|stringifier = repr|" "$PUDB_CFG"
+            sed -i "s|^stringifier =.*|stringifier = default|" "$PUDB_CFG"
         fi
     fi
 
@@ -462,7 +462,11 @@ launch_debugger() {
 
     # Write error summary to temp file for debug_prep to inject
     if [ -n "$last_valid_detail" ]; then
-        echo -e "$last_valid_detail" > _pretty_testing_/.error_summary
+        {
+            echo -e "${dim}[Error Summary - Press 'o' to return to PUDB]${reset}"
+            echo ""
+            echo -e "$last_valid_detail"
+        } > _pretty_testing_/.error_summary
     else
         rm -f _pretty_testing_/.error_summary
     fi
