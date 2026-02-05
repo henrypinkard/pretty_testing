@@ -34,23 +34,11 @@ def _smart_truncate(obj, max_len=40):
     if obj is None:
         return "None"
 
-    # Check for NamedTuple (has _fields attribute)
-    if hasattr(obj, '_fields') and hasattr(obj, '_asdict'):
+    # Class instances have ugly default reprs, so just show class name
+    # (but not NamedTuples - they have nice reprs already)
+    if (hasattr(obj, '__dict__') and not isinstance(obj, type)
+            and not hasattr(obj, '_fields')):
         type_name = type(obj).__name__
-        # Show type and first field (often 'value')
-        if len(obj._fields) > 0:
-            first_field = obj._fields[0]
-            first_val = getattr(obj, first_field)
-            val_repr = repr(first_val)
-            if len(val_repr) > 12:
-                val_repr = val_repr[:9] + "..."
-            return f"{type_name}({first_field}={val_repr}, ...)"
-        return f"{type_name}()"
-
-    # Check for class instance (not built-in types)
-    if hasattr(obj, '__dict__') and not isinstance(obj, type):
-        type_name = type(obj).__name__
-        # For class instances, just show the class name
         return f"<{type_name}>"
 
     s = repr(obj)
