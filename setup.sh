@@ -160,23 +160,31 @@ echo "Static analysis available. Run 'lint' to check code (dependencies installe
 TRACE_WARNING=""
 TRACE_DEST="trace.py"
 
-# Check for collision and find unique name with underscores
+# Check for collision
 if [ -f "$TRACE_DEST" ]; then
-    # File exists - find a unique name with underscores
-    PREFIX="_"
-    while [ -f "${PREFIX}trace.py" ]; do
-        PREFIX="_${PREFIX}"
-    done
-    TRACE_DEST="${PREFIX}trace.py"
-    TRACE_WARNING="trace.py"
+    # Same content? Skip copy entirely.
+    if python3 -c "import hashlib,sys; h=lambda f:hashlib.md5(open(f,'rb').read()).hexdigest(); sys.exit(0 if h(sys.argv[1])==h(sys.argv[2]) else 1)" "$TRACE_DEST" "$KIT_ROOT/trace.py"; then
+        echo ""
+        echo "Trace decorator already up to date: $TRACE_DEST"
+    else
+        # Different file — find a unique name with underscores
+        PREFIX="_"
+        while [ -f "${PREFIX}trace.py" ]; do
+            PREFIX="_${PREFIX}"
+        done
+        TRACE_DEST="${PREFIX}trace.py"
+        TRACE_WARNING="trace.py"
+        cp "$KIT_ROOT/trace.py" "$TRACE_DEST"
+        echo ""
+        echo "Trace decorator installed: $TRACE_DEST"
+        echo "  Usage: from ${TRACE_DEST%.py} import trace"
+    fi
+else
+    cp "$KIT_ROOT/trace.py" "$TRACE_DEST"
+    echo ""
+    echo "Trace decorator installed: $TRACE_DEST"
+    echo "  Usage: from ${TRACE_DEST%.py} import trace"
 fi
-
-# Copy trace.py to working directory
-cp "$KIT_ROOT/trace.py" "$TRACE_DEST"
-
-echo ""
-echo "Trace decorator installed: $TRACE_DEST"
-echo "  Usage: from ${TRACE_DEST%.py} import trace"
 
 # Print warning at the very end if there was a collision
 if [ -n "$TRACE_WARNING" ]; then

@@ -133,13 +133,15 @@ if __name__ == '__main__':
         print(f"[EXE] {{line}}")
         return audit_trace
 
-    # --- CHECK FOR SKIP LISTS ---
-    # Auto-skip: tests that passed last run (failed-only mode) — silent, no output
-    _auto_skip = set()
-    _skip_file = '_pretty_testing_/.skip_tests'
-    if os.path.exists(_skip_file):
-        with open(_skip_file) as _sf:
-            _auto_skip = set(line.strip() for line in _sf if line.strip())
+    # --- FAILED-ONLY MODE: filter pairs to just the failed tests ---
+    _run_file = '_pretty_testing_/.run_tests'
+    if os.path.exists(_run_file):
+        with open(_run_file) as _rf:
+            _run_only = set(line.strip() for line in _rf if line.strip())
+        pairs = [(_c, _m) for _c, _m in pairs if _m in _run_only]
+        methods = [_m for _, _m in pairs]
+        single_method = len(pairs) == 1
+
     # Manual skip: user-chosen skips — visible on dashboard
     _manual_skip = set()
     _manual_skip_file = '_pretty_testing_/.manual_skip'
@@ -163,9 +165,6 @@ if __name__ == '__main__':
     _teardown_classes = []
 
     for target_class, method_name in pairs:
-        # Silent skip: previously-passed tests in failed-only mode
-        if method_name in _auto_skip:
-            continue
         # Visible skip: manually skipped tests
         if method_name in _manual_skip:
             print("skipped:", method_name, flush=True)

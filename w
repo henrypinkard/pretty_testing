@@ -156,16 +156,16 @@ if errors:
     # C. GENERATE RUNNERS
     rm -f _pretty_testing_/watch_*.py
 
-    # Write skip list for failed-only mode
+    # Write run list for failed-only mode (only failed tests, everything else ignored)
     if [ "$FAILED_ONLY" = true ]; then
-        : > _pretty_testing_/.skip_tests
+        : > _pretty_testing_/.run_tests
         for key in "${!prev_test_status[@]}"; do
-            if [ "${prev_test_status[$key]}" = "pass" ]; then
-                echo "$key" >> _pretty_testing_/.skip_tests
+            if [ "${prev_test_status[$key]}" = "fail" ]; then
+                echo "$key" >> _pretty_testing_/.run_tests
             fi
         done
     else
-        rm -f _pretty_testing_/.skip_tests
+        rm -f _pretty_testing_/.run_tests
     fi
 
     for f in "$test_source_dir"/*.py; do
