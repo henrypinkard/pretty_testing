@@ -226,6 +226,31 @@ if __name__ == '__main__':
             if single_method:
                 print("\\n___FAILURE_SUMMARY_START___")
 
+                # ANSI color codes
+                _c_reset = "\\033[0m"
+                _c_dim = "\\033[2m"
+                _c_bold = "\\033[1m"
+                _c_red = "\\033[31m"
+                _c_green = "\\033[32m"
+                _c_yellow = "\\033[33m"
+                _c_blue = "\\033[34m"
+                _c_magenta = "\\033[35m"
+                _c_cyan = "\\033[36m"
+
+                def _highlight_code(code):
+                    '''Simple syntax highlighting for a line of code.'''
+                    import re
+                    # Strings (double or single quoted)
+                    code = re.sub(r'("[^"]*")', _c_green + r'\\1' + _c_reset, code)
+                    code = re.sub(r"('[^']*')", _c_green + r'\\1' + _c_reset, code)
+                    # Numbers
+                    code = re.sub(r'\\b(\\d+)\\b', _c_cyan + r'\\1' + _c_reset, code)
+                    # Keywords
+                    keywords = r'\\b(def|class|return|if|else|elif|while|for|in|try|except|raise|import|from|as|pass|None|True|False|self|with|lambda|yield|assert)\\b'
+                    code = re.sub(keywords, _c_yellow + r'\\1' + _c_reset, code)
+                    return code
+
+                relevant_frames = []
                 try:
                     tb = traceback.extract_tb(e.__traceback__)
                     if tb:
@@ -240,7 +265,6 @@ if __name__ == '__main__':
                             return False
 
                         # Extract relevant frames: test file + user code, stop at stdlib
-                        relevant_frames = []
                         for f in tb:
                             fn = os.path.basename(f.filename)
                             is_test_file = f.filename == __file__ or 'debug_this_test' in fn or 'watch_' in fn
@@ -249,43 +273,44 @@ if __name__ == '__main__':
                             is_runner = is_test_file and f.name == '<module>'
 
                             if is_runner:
-                                # Skip runner frames
                                 continue
                             elif is_test_file:
                                 relevant_frames.append(f)
                             elif is_stdlib:
-                                # Stop at stdlib - don't include these frames
                                 if relevant_frames:
                                     break
                             else:
-                                # User code - include it
                                 relevant_frames.append(f)
 
-                        # Print all relevant frames
-                        for f in relevant_frames:
+                        # Print stack trace with increasing indentation
+                        print(f"{{_c_dim}}Traceback (from test to error):{{_c_reset}}")
+                        for i, f in enumerate(relevant_frames):
                             filename = os.path.basename(f.filename)
-                            print(f"File \\"{{filename}}\\", line {{f.lineno}}, in {{f.name}}")
+                            indent = "  " * i
+                            # Colorized frame header
+                            print(f"{{indent}}{{_c_blue}}{{filename}}{{_c_reset}}:{{_c_green}}{{f.lineno}}{{_c_reset}} in {{_c_yellow}}{{f.name}}{{_c_reset}}")
                             if f.line:
-                                print(f"    {{f.line}}")
+                                code_indent = "  " * (i + 1)
+                                highlighted = _highlight_code(f.line)
+                                print(f"{{code_indent}}{{highlighted}}")
+                        print()  # blank line before error
                 except:
                     pass
 
-                # --- ROBUST FORMATTING ---
+                # --- ERROR MESSAGE AT BOTTOM ---
                 msg = str(e)
-                # Split by newline to ignore the 'diff' that unittest adds
                 first_line = msg.split('\\n', 1)[0]
 
                 if " != " in first_line:
                     parts = first_line.split(" != ", 1)
                     if len(parts) == 2:
-                        print("AssertionError:")
-                        print(f"  Actual:   {{parts[0]}}")
-                        print(f"  Expected: {{parts[1]}}")
+                        print(f"{{_c_bold}}{{_c_red}}AssertionError:{{_c_reset}}")
+                        print(f"  {{_c_bold}}Actual:   {{_c_yellow}}{{parts[0]}}{{_c_reset}}")
+                        print(f"  {{_c_bold}}Expected: {{_c_green}}{{parts[1]}}{{_c_reset}}")
                     else:
-                        print(f"{{type(e).__name__}}: {{e}}")
+                        print(f"{{_c_bold}}{{_c_red}}{{type(e).__name__}}:{{_c_reset}} {{e}}")
                 else:
-                    # Fallback for complex messages
-                    print(f"{{type(e).__name__}}: {{e}}")
+                    print(f"{{_c_bold}}{{_c_red}}{{type(e).__name__}}:{{_c_reset}} {{e}}")
 
                 print("___FAILURE_SUMMARY_END___\\n")
 
