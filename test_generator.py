@@ -133,17 +133,19 @@ if __name__ == '__main__':
         print(f"[EXE] {{line}}")
         return audit_trace
 
-    # --- CHECK FOR SKIP LIST (failed-only mode + manual skips) ---
-    _skip_tests = set()
+    # --- CHECK FOR SKIP LISTS ---
+    # Auto-skip: tests that passed last run (failed-only mode) — silent, no output
+    _auto_skip = set()
     _skip_file = '_pretty_testing_/.skip_tests'
     if os.path.exists(_skip_file):
         with open(_skip_file) as _sf:
-            _skip_tests = set(line.strip() for line in _sf if line.strip())
-    # Also check for manual skip file
+            _auto_skip = set(line.strip() for line in _sf if line.strip())
+    # Manual skip: user-chosen skips — visible on dashboard
+    _manual_skip = set()
     _manual_skip_file = '_pretty_testing_/.manual_skip'
     if os.path.exists(_manual_skip_file):
         with open(_manual_skip_file) as _msf:
-            _skip_tests.update(line.strip() for line in _msf if line.strip())
+            _manual_skip = set(line.strip() for line in _msf if line.strip())
 
     # --- setUpModule ---
     if hasattr(current_module, 'setUpModule'):
@@ -161,8 +163,11 @@ if __name__ == '__main__':
     _teardown_classes = []
 
     for target_class, method_name in pairs:
-        # Skip tests that previously passed (failed-only mode)
-        if method_name in _skip_tests:
+        # Silent skip: previously-passed tests in failed-only mode
+        if method_name in _auto_skip:
+            continue
+        # Visible skip: manually skipped tests
+        if method_name in _manual_skip:
             print("skipped:", method_name, flush=True)
             continue
 
