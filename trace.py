@@ -109,12 +109,22 @@ def _format_args(args, kwargs, max_len=40, watch=None):
         watch: If set, only show arguments at these positions (0-indexed)
     """
     parts = []
+    start_idx = 0
+
+    # Skip 'self' for bound methods - it's just noise
+    if len(args) > 0:
+        first = args[0]
+        if hasattr(first, '__dict__') and not isinstance(first, type):
+            start_idx = 1
 
     for i, a in enumerate(args):
-        if watch is None or i in watch:
+        if i < start_idx:
+            continue
+        # Adjust index for watch when we've skipped self
+        watch_idx = i - start_idx
+        if watch is None or watch_idx in watch:
             parts.append(_smart_truncate(a, max_len))
         else:
-            # Show placeholder for skipped args
             parts.append("·")
 
     for k, v in kwargs.items():
@@ -132,7 +142,7 @@ def trace(_func=None, *, max_depth=20, show_returns=True, max_len=50, indent="\t
         max_depth: Maximum recursion depth to print (default 20)
         show_returns: Whether to print return values (default True)
         max_len: Maximum length for argument/return value repr (default 50)
-        indent: String to use for each indentation level (default "  ")
+        indent: String to use for each indentation level (default "\t")
         watch: List of argument positions (0-indexed) to show in detail.
                Other args shown as "·". None means show all. (default None)
         show_depth: If True, prefix each line with [depth] (default False)
