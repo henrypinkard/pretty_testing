@@ -121,7 +121,7 @@ def _format_args(args, kwargs, max_len=40, watch=None):
     return ", ".join(parts)
 
 
-def trace(_func=None, *, max_depth=20, show_returns=True, max_len=250, indent="\t",
+def trace(_func=None, *, max_depth=6, show_returns=True, max_len=250, indent="\t",
           watch=None, show_depth=False, show_exc=True, limit=None):
     """
     Decorator to trace recursive function calls.

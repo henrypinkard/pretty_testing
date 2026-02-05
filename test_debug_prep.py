@@ -1385,5 +1385,126 @@ class TestPerTestTimeout(unittest.TestCase):
         self.assertIn('FAILED_METHOD: test_hangs', result.stdout)
 
 
+class TestRecursionErrorHandling(unittest.TestCase):
+    """Test that infinite recursion is handled cleanly."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.old_cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        os.makedirs('_pretty_testing_', exist_ok=True)
+        os.makedirs('tests', exist_ok=True)
+
+    def tearDown(self):
+        os.chdir(self.old_cwd)
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def _write_test_file(self, content):
+        path = os.path.join('tests', 'test_recurse.py')
+        with open(path, 'w') as f:
+            f.write(textwrap.dedent(content))
+        return path
+
+    def _generate_and_run(self, test_file, method=None):
+        import subprocess
+        generator = os.path.join(os.path.dirname(__file__), 'test_generator.py')
+        args = [sys.executable, generator, test_file]
+        if method:
+            args.append(method)
+        subprocess.run(args, capture_output=True, cwd=self.tmpdir)
+        if method:
+            gen_file = os.path.join('_pretty_testing_', 'debug_this_test.py')
+        else:
+            gen_file = os.path.join('_pretty_testing_', 'debug_this_test_test_recurse.py')
+        result = subprocess.run(
+            [sys.executable, gen_file],
+            capture_output=True, text=True, timeout=10,
+            cwd=self.tmpdir,
+        )
+        return result
+
+    def _strip_ansi(self, text):
+        import re
+        return re.sub(r'\x1b\[[0-9;]*m', '', text)
+
+    def test_recursion_error_shows_as_failed(self):
+        """Infinite recursion should show as FAILED_METHOD, not hang."""
+        test_file = self._write_test_file("""\
+            import unittest
+            def bad_recurse(n):
+                return bad_recurse(n)
+            class TestRecurse(unittest.TestCase):
+                def test_inf(self):
+                    bad_recurse(1)
+        """)
+        result = self._generate_and_run(test_file, method='test_inf')
+        self.assertIn('FAILED_METHOD: test_inf', result.stdout)
+
+    def test_recursion_error_output_is_capped(self):
+        """Should show at most ~6 frames, not 1000."""
+        test_file = self._write_test_file("""\
+            import unittest
+            def bad_recurse(n):
+                return bad_recurse(n)
+            class TestRecurse(unittest.TestCase):
+                def test_inf(self):
+                    bad_recurse(1)
+        """)
+        result = self._generate_and_run(test_file, method='test_inf')
+        output = self._strip_ansi(result.stdout)
+        # Should contain the omission marker
+        self.assertIn('frames omitted', output)
+        # Should NOT have hundreds of "bad_recurse" lines
+        frame_lines = [l for l in output.splitlines() if 'bad_recurse' in l and '►' in l]
+        self.assertLessEqual(len(frame_lines), 10)
+
+    def test_recursion_error_exits_cleanly(self):
+        """Process should exit with code 1, not dump a 1000-frame traceback."""
+        test_file = self._write_test_file("""\
+            import unittest
+            def bad_recurse(n):
+                return bad_recurse(n)
+            class TestRecurse(unittest.TestCase):
+                def test_inf(self):
+                    bad_recurse(1)
+        """)
+        result = self._generate_and_run(test_file, method='test_inf')
+        self.assertEqual(result.returncode, 1)
+        # stderr should NOT contain a massive Python traceback
+        # (sys.exit(1) produces no traceback; raise e would produce 1000 lines)
+        tb_lines = [l for l in result.stderr.splitlines()
+                    if 'bad_recurse' in l]
+        self.assertLessEqual(len(tb_lines), 5)
+
+    def test_patch_postmortem_finds_raise_e(self):
+        """patch_postmortem should still find 'raise e' even with sys.exit(1) above it."""
+        from debug_prep import patch_postmortem
+        # Simulate the generated RUNNER_BLOCK lines around raise e
+        lines = [
+            '                if isinstance(e, RecursionError):\n',
+            '                    sys.exit(1)\n',
+            '                raise e\n',
+            '            pass\n',
+        ]
+        result = patch_postmortem(lines, 'pudb')
+        joined = ''.join(result)
+        self.assertIn('post_mortem', joined)
+        self.assertNotIn('raise e', joined)
+
+    def test_non_recursion_error_still_raises(self):
+        """Normal exceptions should still raise (so patch_postmortem / pudb works)."""
+        test_file = self._write_test_file("""\
+            import unittest
+            class TestNormal(unittest.TestCase):
+                def test_fail(self):
+                    raise ValueError("boom")
+        """)
+        result = self._generate_and_run(test_file, method='test_fail')
+        self.assertIn('FAILED_METHOD: test_fail', result.stdout)
+        # Should have a Python traceback on stderr (from raise e)
+        self.assertIn('ValueError', result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()

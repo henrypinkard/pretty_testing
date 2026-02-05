@@ -355,8 +355,9 @@ if __name__ == '__main__':
 
                 print("___FAILURE_SUMMARY_END___\\n")
 
-                if not isinstance(e, RecursionError):
-                    raise e
+                if isinstance(e, RecursionError):
+                    sys.exit(1)
+                raise e
             pass
         finally:
              if hasattr(test_instance, 'tearDown'):
