@@ -290,8 +290,7 @@ if __name__ == '__main__':
                         print(f"{{_c_dim}}Traceback (from test to error):{{_c_reset}}")
                         for i, f in enumerate(relevant_frames):
                             filename = os.path.basename(f.filename)
-                            indent = "  " * i
-                            is_last = (i == len(relevant_frames) - 1)
+                            indent = "   " * i  # 3 spaces per level
 
                             # Frame header (with arrow prefix if not first)
                             if i == 0:
