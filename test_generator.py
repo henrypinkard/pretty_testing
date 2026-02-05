@@ -307,11 +307,24 @@ if __name__ == '__main__':
                             else:
                                 relevant_frames.append(f)
 
+                        # Cap frames for deep recursion
+                        _MAX_DISPLAY_FRAMES = 10
+                        _truncated = len(relevant_frames) > _MAX_DISPLAY_FRAMES
+                        if _truncated:
+                            _show = relevant_frames[:3] + relevant_frames[-3:]
+                            _omitted = len(relevant_frames) - 6
+                        else:
+                            _show = relevant_frames
+
                         # Print stack trace with compact tree connectors
                         print(f"{{_c_dim}}Traceback (from test to error):{{_c_reset}}")
-                        for i, f in enumerate(relevant_frames):
+                        for i, f in enumerate(_show):
                             filename = os.path.basename(f.filename)
-                            indent = "   " * i  # 3 spaces per level
+                            indent = "   " * min(i, 5)  # cap indent depth
+
+                            # Show omission marker between first and last groups
+                            if _truncated and i == 3:
+                                print(f"{{indent}}{{_c_dim}}   ... {{_omitted}} frames omitted (recursive) ...{{_c_reset}}")
 
                             # Frame header (with arrow prefix if not first)
                             if i == 0:
@@ -342,7 +355,8 @@ if __name__ == '__main__':
 
                 print("___FAILURE_SUMMARY_END___\\n")
 
-                raise e
+                if not isinstance(e, RecursionError):
+                    raise e
             pass
         finally:
              if hasattr(test_instance, 'tearDown'):
