@@ -122,7 +122,7 @@ def parse_trace(text):
             continue
 
         if state == 5:
-            failure_summary.append(line.strip())
+            failure_summary.append(line.rstrip())  # preserve leading whitespace (indentation)
             continue
         if state == 1:
             if clean.startswith('[EXE] '):
