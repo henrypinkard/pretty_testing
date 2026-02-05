@@ -974,5 +974,416 @@ ___TEST_START___
         self.assertIn('self.assertEqual(result, 10)', exec_log)
 
 
+class TestUntraceScript(unittest.TestCase):
+    """Test the untrace script removes @trace decorators."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.script = os.path.join(os.path.dirname(__file__), 'untrace')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def _write_file(self, relpath, content):
+        path = os.path.join(self.tmpdir, relpath)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            f.write(content)
+        return path
+
+    def _read_file(self, path):
+        with open(path) as f:
+            return f.read()
+
+    def _run_untrace(self, *args):
+        import subprocess
+        return subprocess.run(
+            [self.script] + list(args),
+            capture_output=True, text=True, cwd=self.tmpdir
+        )
+
+    def test_removes_trace_no_args(self):
+        """@trace with no parens is removed."""
+        path = self._write_file('foo.py', '@trace\ndef foo():\n    pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), 'def foo():\n    pass\n')
+
+    def test_removes_trace_empty_parens(self):
+        """@trace() with empty parens is removed."""
+        path = self._write_file('foo.py', '@trace()\ndef foo():\n    pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), 'def foo():\n    pass\n')
+
+    def test_removes_trace_with_args(self):
+        """@trace(max_depth=5) with args is removed."""
+        path = self._write_file('foo.py', '    @trace(max_depth=5, watch=[1])\n    def foo(self):\n        pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), '    def foo(self):\n        pass\n')
+
+    def test_preserves_non_trace_decorators(self):
+        """Other decorators are not removed."""
+        path = self._write_file('foo.py', '@other_decorator\n@trace()\ndef foo():\n    pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), '@other_decorator\ndef foo():\n    pass\n')
+
+    def test_no_trace_reports_nothing(self):
+        """Files without @trace report nothing found."""
+        self._write_file('foo.py', 'def foo():\n    pass\n')
+        result = self._run_untrace(os.path.join(self.tmpdir, 'foo.py'))
+        self.assertIn('No @trace decorators found', result.stdout)
+
+    def test_recursive_directory(self):
+        """Recursively removes @trace from .py files in subdirectories."""
+        self._write_file('sub/a.py', '@trace\ndef a():\n    pass\n')
+        self._write_file('sub/deep/b.py', '@trace()\ndef b():\n    pass\n')
+        self._run_untrace(self.tmpdir)
+        self.assertEqual(self._read_file(os.path.join(self.tmpdir, 'sub/a.py')), 'def a():\n    pass\n')
+        self.assertEqual(self._read_file(os.path.join(self.tmpdir, 'sub/deep/b.py')), 'def b():\n    pass\n')
+
+    def test_does_not_remove_trace_in_code(self):
+        """Does not remove lines like 'trace(something)' that aren't decorators."""
+        path = self._write_file('foo.py', 'result = trace(func)\ndef foo():\n    pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), 'result = trace(func)\ndef foo():\n    pass\n')
+
+
+class TestBreakpointClearing(unittest.TestCase):
+    """Test that breakpoints are cleared when debugged test passes."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.bp_file = os.path.join(self.tmpdir, 'saved-breakpoints')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def _write_bp_file(self, content):
+        with open(self.bp_file, 'w') as f:
+            f.write(content)
+
+    def _read_bp_file(self):
+        with open(self.bp_file) as f:
+            return f.read()
+
+    def _simulate_clear_logic(self, last_debugged_method, failed_methods):
+        """Simulate the breakpoint clearing logic from w script."""
+        if last_debugged_method and os.path.exists(self.bp_file):
+            method_still_failing = last_debugged_method in failed_methods
+            if not method_still_failing:
+                # Test passed — clear all saved breakpoints
+                with open(self.bp_file, 'w') as f:
+                    f.write('')
+                return True  # cleared
+        return False  # not cleared
+
+    def test_clears_all_breakpoints_when_test_passes(self):
+        """When debugged test passes, ALL breakpoints should be cleared."""
+        self._write_bp_file(
+            "b /path/to/_pretty_testing_/debug_this_test.py:42\n"
+            "b /path/to/solver.py:10\n"
+            "b /path/to/container.py:25\n"
+        )
+        cleared = self._simulate_clear_logic('test_foo', failed_methods=[])
+        self.assertTrue(cleared)
+        self.assertEqual(self._read_bp_file(), '')
+
+    def test_preserves_breakpoints_when_test_still_fails(self):
+        """When debugged test is still failing, breakpoints should be kept."""
+        bp_content = (
+            "b /path/to/_pretty_testing_/debug_this_test.py:42\n"
+            "b /path/to/solver.py:10\n"
+        )
+        self._write_bp_file(bp_content)
+        cleared = self._simulate_clear_logic('test_foo', failed_methods=['test_foo'])
+        self.assertFalse(cleared)
+        self.assertEqual(self._read_bp_file(), bp_content)
+
+    def test_no_clear_when_no_debugged_method(self):
+        """When no method was debugged, breakpoints should not be touched."""
+        bp_content = "b /path/to/solver.py:10\n"
+        self._write_bp_file(bp_content)
+        cleared = self._simulate_clear_logic('', failed_methods=[])
+        self.assertFalse(cleared)
+        self.assertEqual(self._read_bp_file(), bp_content)
+
+    def test_clears_user_code_breakpoints_not_just_test_file(self):
+        """Verify user code breakpoints (solver.py etc) are also cleared on pass."""
+        self._write_bp_file(
+            "b /path/to/solver.py:10\n"
+            "b /path/to/utils.py:55\n"
+        )
+        cleared = self._simulate_clear_logic('test_foo', failed_methods=['test_bar'])
+        # test_foo is not in failed_methods, so it passed
+        self.assertTrue(cleared)
+        self.assertEqual(self._read_bp_file(), '')
+
+    def test_no_crash_when_bp_file_missing(self):
+        """Should not crash if breakpoints file doesn't exist."""
+        os.remove(self.bp_file) if os.path.exists(self.bp_file) else None
+        cleared = self._simulate_clear_logic('test_foo', failed_methods=[])
+        self.assertFalse(cleared)
+
+
+class TestBatchedSyntaxCheck(unittest.TestCase):
+    """Test the batched syntax check used by w (single Python process)."""
+
+    CHECKER_SCRIPT = """\
+import sys, py_compile
+errors = []
+for line in sys.stdin:
+    f = line.strip()
+    if not f: continue
+    try:
+        py_compile.compile(f, doraise=True)
+    except py_compile.PyCompileError as e:
+        errors.append(str(e))
+if errors:
+    print('\\n'.join(errors))
+    sys.exit(1)
+"""
+
+    def _run_checker(self, file_paths):
+        """Run the batched syntax checker on given file paths."""
+        import subprocess
+        input_text = '\n'.join(file_paths)
+        result = subprocess.run(
+            ['python3', '-c', self.CHECKER_SCRIPT],
+            input=input_text, capture_output=True, text=True
+        )
+        return result
+
+    def test_all_valid_files_pass(self):
+        """All valid files should pass with exit code 0."""
+        with tempfile.TemporaryDirectory() as d:
+            for name in ['a.py', 'b.py', 'c.py']:
+                with open(os.path.join(d, name), 'w') as f:
+                    f.write('x = 1\n')
+            files = [os.path.join(d, n) for n in ['a.py', 'b.py', 'c.py']]
+            result = self._run_checker(files)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.strip(), '')
+
+    def test_catches_syntax_error(self):
+        """A file with a syntax error should cause exit code 1."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, 'good.py'), 'w') as f:
+                f.write('x = 1\n')
+            with open(os.path.join(d, 'bad.py'), 'w') as f:
+                f.write('def broken(\n')
+            files = [os.path.join(d, 'good.py'), os.path.join(d, 'bad.py')]
+            result = self._run_checker(files)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('bad.py', result.stdout)
+
+    def test_reports_correct_file_in_error(self):
+        """Error output should identify which file has the problem."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, 'ok1.py'), 'w') as f:
+                f.write('a = 1\n')
+            with open(os.path.join(d, 'broken.py'), 'w') as f:
+                f.write('if True\n')  # missing colon
+            with open(os.path.join(d, 'ok2.py'), 'w') as f:
+                f.write('b = 2\n')
+            files = [os.path.join(d, n) for n in ['ok1.py', 'broken.py', 'ok2.py']]
+            result = self._run_checker(files)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('broken.py', result.stdout)
+            self.assertNotIn('ok1.py', result.stdout)
+            self.assertNotIn('ok2.py', result.stdout)
+
+    def test_multiple_errors_all_reported(self):
+        """Multiple files with errors should all be reported."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, 'bad1.py'), 'w') as f:
+                f.write('def(\n')
+            with open(os.path.join(d, 'bad2.py'), 'w') as f:
+                f.write('class:\n')
+            files = [os.path.join(d, 'bad1.py'), os.path.join(d, 'bad2.py')]
+            result = self._run_checker(files)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('bad1.py', result.stdout)
+            self.assertIn('bad2.py', result.stdout)
+
+    def test_empty_input_passes(self):
+        """No files to check should pass."""
+        result = self._run_checker([])
+        self.assertEqual(result.returncode, 0)
+
+    def test_skipped_file_not_checked(self):
+        """Files not in the input list are not checked (simulates -f mode skip)."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, 'good.py'), 'w') as f:
+                f.write('x = 1\n')
+            with open(os.path.join(d, 'bad_but_skipped.py'), 'w') as f:
+                f.write('def broken(\n')
+            # Only check the good file, skip the bad one
+            files = [os.path.join(d, 'good.py')]
+            result = self._run_checker(files)
+            self.assertEqual(result.returncode, 0)
+
+
+class TestPerTestTimeout(unittest.TestCase):
+    """Test per-test timeout via PRETTY_TESTING_TIMEOUT env var."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.old_cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        os.makedirs('_pretty_testing_', exist_ok=True)
+        os.makedirs('tests', exist_ok=True)
+
+    def tearDown(self):
+        os.chdir(self.old_cwd)
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def _write_test_file(self, content):
+        path = os.path.join('tests', 'test_timeout.py')
+        with open(path, 'w') as f:
+            f.write(textwrap.dedent(content))
+        return path
+
+    def _generate_and_run(self, test_file, env_overrides=None, method=None):
+        """Generate standalone test with test_generator and run it."""
+        import subprocess
+        generator = os.path.join(os.path.dirname(__file__), 'test_generator.py')
+        args = [sys.executable, generator, test_file]
+        if method:
+            args.append(method)
+        subprocess.run(args, capture_output=True, cwd=self.tmpdir)
+
+        # Find the generated file
+        if method:
+            gen_file = os.path.join('_pretty_testing_', 'debug_this_test.py')
+        else:
+            gen_file = os.path.join('_pretty_testing_', 'debug_this_test_test_timeout.py')
+
+        env = os.environ.copy()
+        if env_overrides:
+            env.update(env_overrides)
+
+        result = subprocess.run(
+            [sys.executable, gen_file],
+            capture_output=True, text=True, timeout=15,
+            cwd=self.tmpdir, env=env,
+        )
+        return result
+
+    def test_timeout_kills_slow_test(self):
+        """A test that runs longer than PRETTY_TESTING_TIMEOUT should fail with TimeoutError."""
+        test_file = self._write_test_file("""\
+            import unittest
+            import time
+            class TestSlow(unittest.TestCase):
+                def test_slow(self):
+                    time.sleep(10)
+        """)
+        result = self._generate_and_run(
+            test_file,
+            env_overrides={'PRETTY_TESTING_TIMEOUT': '1'},
+            method='test_slow',
+        )
+        self.assertIn('FAILED_METHOD:', result.stdout)
+        self.assertIn('test_slow', result.stdout)
+        self.assertIn('Timed out', result.stdout + result.stderr)
+
+    def test_fast_test_passes_with_timeout(self):
+        """A fast test should pass even with timeout enabled."""
+        test_file = self._write_test_file("""\
+            import unittest
+            class TestFast(unittest.TestCase):
+                def test_fast(self):
+                    self.assertEqual(1 + 1, 2)
+        """)
+        result = self._generate_and_run(
+            test_file,
+            env_overrides={'PRETTY_TESTING_TIMEOUT': '5'},
+            method='test_fast',
+        )
+        self.assertIn('passed:', result.stdout)
+        self.assertIn('test_fast', result.stdout)
+        self.assertNotIn('FAILED_METHOD', result.stdout)
+
+    def test_zero_timeout_means_no_timeout(self):
+        """PRETTY_TESTING_TIMEOUT=0 should not set any alarm."""
+        test_file = self._write_test_file("""\
+            import unittest
+            import time
+            class TestNoTimeout(unittest.TestCase):
+                def test_short_sleep(self):
+                    time.sleep(0.5)
+                    self.assertTrue(True)
+        """)
+        result = self._generate_and_run(
+            test_file,
+            env_overrides={'PRETTY_TESTING_TIMEOUT': '0'},
+            method='test_short_sleep',
+        )
+        self.assertIn('passed:', result.stdout)
+        self.assertNotIn('FAILED_METHOD', result.stdout)
+
+    def test_debug_mode_skips_timeout(self):
+        """With PRETTY_TESTING_DEBUG=1, timeout should NOT fire even on slow tests.
+        This ensures pressing 'd' to debug a timed-out test won't timeout again."""
+        test_file = self._write_test_file("""\
+            import unittest
+            import time
+            class TestDebug(unittest.TestCase):
+                def test_debuggable(self):
+                    time.sleep(2)
+                    self.assertTrue(True)
+        """)
+        result = self._generate_and_run(
+            test_file,
+            env_overrides={
+                'PRETTY_TESTING_TIMEOUT': '1',
+                'PRETTY_TESTING_DEBUG': '1',
+            },
+            method='test_debuggable',
+        )
+        # Should pass because debug mode disables timeout
+        self.assertIn('passed:', result.stdout)
+        self.assertNotIn('FAILED_METHOD', result.stdout)
+        self.assertNotIn('Timed out', result.stdout + result.stderr)
+
+    def test_timeout_cancelled_after_success(self):
+        """Alarm should be cancelled after test passes (no spurious SIGALRM later)."""
+        test_file = self._write_test_file("""\
+            import unittest
+            class TestAlarmCancelled(unittest.TestCase):
+                def test_a(self):
+                    self.assertTrue(True)
+                def test_b(self):
+                    self.assertTrue(True)
+        """)
+        result = self._generate_and_run(
+            test_file,
+            env_overrides={'PRETTY_TESTING_TIMEOUT': '1'},
+        )
+        # Both tests should pass without alarm interference
+        self.assertIn('passed: test_a', result.stdout)
+        self.assertIn('passed: test_b', result.stdout)
+        self.assertNotIn('FAILED_METHOD', result.stdout)
+
+    def test_timed_out_test_shows_as_failed(self):
+        """A timed-out test should appear as FAILED_METHOD in output, so w dashboard
+        picks it up as a failure and enables the debug key."""
+        test_file = self._write_test_file("""\
+            import unittest
+            import time
+            class TestTimeout(unittest.TestCase):
+                def test_hangs(self):
+                    time.sleep(100)
+        """)
+        result = self._generate_and_run(
+            test_file,
+            env_overrides={'PRETTY_TESTING_TIMEOUT': '1'},
+            method='test_hangs',
+        )
+        self.assertIn('FAILED_METHOD: test_hangs', result.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()

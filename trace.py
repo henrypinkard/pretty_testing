@@ -121,8 +121,8 @@ def _format_args(args, kwargs, max_len=40, watch=None):
     return ", ".join(parts)
 
 
-def trace(_func=None, *, max_depth=20, show_returns=True, max_len=50, indent="\t",
-          watch=None, show_depth=False, show_exc=True):
+def trace(_func=None, *, max_depth=20, show_returns=True, max_len=250, indent="\t",
+          watch=None, show_depth=False, show_exc=True, limit=None):
     """
     Decorator to trace recursive function calls.
 
@@ -163,12 +163,22 @@ def trace(_func=None, *, max_depth=20, show_returns=True, max_len=50, indent="\t
 
             if current_depth < max_depth:
                 args_str = _format_args(args, kwargs, max_len, watch)
-                print(f"{prefix}{func.__name__}({args_str})")
+                call_str = f"{func.__name__}({args_str})"
+                if '\n' in call_str:
+                    # Multi-line args (e.g. 2D numpy arrays):
+                    # indent continuation lines to align under the opening paren
+                    pad = prefix + " " * (len(func.__name__) + 1)
+                    call_str = call_str.replace('\n', '\n' + pad)
+                print(f"{prefix}{call_str}")
             elif current_depth == max_depth:
                 print(f"{prefix}... (max depth {max_depth} reached)")
 
             depth[0] += 1
             exc_shown[0] = False  # Reset for this call
+
+            if limit is not None and current_depth >= limit:
+                depth[0] -= 1
+                raise RecursionError(f"trace limit={limit} exceeded")
 
             try:
                 result = func(*args, **kwargs)

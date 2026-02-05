@@ -206,8 +206,23 @@ if __name__ == '__main__':
                 print("___TEST_START___")
                 sys.settrace(audit_trace)
 
+            # Per-test timeout (env var set by w, skipped in debug mode)
+            _timeout_sec = 0
+            if not _debug_mode:
+                try:
+                    _timeout_sec = int(os.environ.get('PRETTY_TESTING_TIMEOUT', '0'))
+                except ValueError:
+                    _timeout_sec = 0
+            if _timeout_sec > 0:
+                def _timeout_handler(signum, frame):
+                    raise TimeoutError(f"Timed out after {{_timeout_sec}}s")
+                signal.signal(signal.SIGALRM, _timeout_handler)
+                signal.alarm(_timeout_sec)
+
             _method_func()
 
+            if _timeout_sec > 0:
+                signal.alarm(0)
             if single_method:
                 sys.settrace(None)
             if _expecting_failure:
@@ -216,10 +231,12 @@ if __name__ == '__main__':
                 continue
             print("passed:", method_name, flush=True)
         except unittest.SkipTest:
+            signal.alarm(0)
             if single_method:
                 sys.settrace(None)
             print("skipped:", method_name, flush=True)
         except Exception as e:
+            signal.alarm(0)
             sys.settrace(None)
             # Handle @expectedFailure: flag-based (3.12+) or wrapper-based (older)
             if _expecting_failure or type(e).__name__ == '_ExpectedFailure':

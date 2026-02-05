@@ -20,25 +20,66 @@ TEST_FILE="$1"
 METHOD="${2:-}"
 DEBUGGER="${3:-pudb}"
 
+# --- Color setup (graceful fallback to no color) ---
+if command -v tput >/dev/null 2>&1; then
+    green=$(tput setaf 2 2>/dev/null) || green=""
+    red=$(tput setaf 1 2>/dev/null) || red=""
+    yellow=$(tput setaf 3 2>/dev/null) || yellow=""
+    blue=$(tput setaf 4 2>/dev/null) || blue=""
+    bold=$(tput bold 2>/dev/null) || bold=""
+    dim=$(tput dim 2>/dev/null) || dim=""
+    reset=$(tput sgr0 2>/dev/null) || reset=""
+else
+    green="" red="" yellow="" blue="" bold="" dim="" reset=""
+fi
+
 # If no method specified, just run all tests in file (no debugger)
 if [ -z "$METHOD" ]; then
-    echo "Running all tests in $TEST_FILE..."
+    echo "${bold}Running all tests in ${blue}$TEST_FILE${reset}${bold}...${reset}"
     python3 "$REPO_ROOT/test_generator.py" "$TEST_FILE"
-    python3 _pretty_testing_/debug_this_test_*.py
+
+    # Run and colorize output
+    while IFS= read -r line; do
+        if [[ "$line" == "passed:"* ]]; then
+            test_name=$(echo "$line" | cut -d' ' -f2)
+            echo "  [${green}PASS${reset}] $test_name"
+        elif [[ "$line" == "FAILED_METHOD:"* ]]; then
+            test_name=$(echo "$line" | cut -d' ' -f2)
+            echo "  [${red}FAIL${reset}] $test_name"
+        elif [[ "$line" == "skipped:"* ]]; then
+            test_name=$(echo "$line" | cut -d' ' -f2)
+            echo "  [${dim}SKIP${reset}] $test_name"
+        elif [[ "$line" == "NO_TESTS_FOUND_IN_FILE" ]]; then
+            echo "  [${yellow}WARNING${reset}] No methods starting with 'test_' found."
+        elif [[ "$line" == "___TEST_START___" ]] || [[ "$line" == "___FAILURE_SUMMARY_START___" ]] || [[ "$line" == "___FAILURE_SUMMARY_END___" ]]; then
+            : # skip markers
+        elif [[ "$line" == *"Traceback (from test to error):"* ]]; then
+            echo ""
+            echo "  ${dim}$line${reset}"
+        elif [[ "$line" == *"Error:"* ]] || [[ "$line" == *"Error "* ]]; then
+            echo "  ${bold}${red}$line${reset}"
+        elif [[ "$line" == *"└►"* ]]; then
+            echo "  $line"  # already has ANSI colors from test_generator
+        else
+            echo "  ${dim}$line${reset}"
+        fi
+    done < <(python3 _pretty_testing_/debug_this_test_*.py 2>&1 || true)
+
+    echo ""
     exit 0
 fi
 
-echo "Generating test file..."
+echo "${dim}Generating test file...${reset}"
 python3 "$REPO_ROOT/test_generator.py" "$TEST_FILE" "$METHOD"
 
-echo "Finding fail line..."
+echo "${dim}Finding fail line...${reset}"
 err_out=$(python3 _pretty_testing_/debug_this_test.py 2>&1 || true)
 fail_line=$(echo "$err_out" | python3 "$REPO_ROOT/output_parser.py" extract-fail-line "debug_this_test.py" "$METHOD" 2>/dev/null)
 fail_line=${fail_line:-0}
 
-echo "Prepping debugger ($DEBUGGER)..."
+echo "${dim}Prepping debugger ($DEBUGGER)...${reset}"
 python3 "$REPO_ROOT/debug_prep.py" debug _pretty_testing_/debug_this_test.py \
     --method "$METHOD" --fail-line "$fail_line" --debugger "$DEBUGGER"
 
-echo "Launching..."
+echo "${bold}Launching ${blue}$DEBUGGER${reset}${bold}...${reset}"
 python3 _pretty_testing_/debug_this_test.py

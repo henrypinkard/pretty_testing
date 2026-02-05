@@ -11,6 +11,7 @@ STOP_EARLY=false
 NO_REFRESH=false
 FAILED_ONLY=false
 CUSTOM_TEST_DIR=""
+TEST_TIMEOUT=2
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --stop|-s)
@@ -29,11 +30,16 @@ while [[ $# -gt 0 ]]; do
             CUSTOM_TEST_DIR="$2"
             shift 2
             ;;
+        --timeout|-T)
+            TEST_TIMEOUT="$2"
+            shift 2
+            ;;
         *)
             shift
             ;;
     esac
 done
+export PRETTY_TESTING_TIMEOUT="$TEST_TIMEOUT"
 
 # --- 1. SETUP SAFE BUILDER ---
 cat "$BUILDER" \
@@ -109,17 +115,40 @@ run_tests() {
     fi
 
     # B. VALIDATE SOURCE (Fail Fast - Syntax Only)
+    # In failed-only mode, only check files that will actually be run
     syntax_output=""
     is_syntax_error=false
-    while IFS= read -r pyfile; do
-        result=$(python3 -m py_compile "$pyfile" 2>&1)
-        if [ $? -ne 0 ]; then
-            is_syntax_error=true
-            syntax_output+="$result"$'\n'
-        fi
-    done < <(find . -maxdepth 1 -name "*.py" -type f; find "$test_source_dir" -name "*.py" -type f)
+    if [ "$FAILED_ONLY" = true ]; then
+        # Only check root-level .py files + test files that had failures
+        check_files=$(find . -maxdepth 1 -name "*.py" -type f)
+        for f in "$test_source_dir"/*.py; do
+            [ -f "$f" ] || continue
+            file_label=$(basename "$f" .py)
+            if [ "${prev_file_has_fail[$file_label]}" = "1" ]; then
+                check_files+=$'\n'"$f"
+            fi
+        done
+    else
+        check_files=$(find . -maxdepth 1 -name "*.py" -type f; find "$test_source_dir" -name "*.py" -type f)
+    fi
 
-    if [ "$is_syntax_error" = true ]; then
+    # Batch syntax check in a single Python process
+    syntax_output=$(echo "$check_files" | python3 -c "
+import sys, py_compile
+errors = []
+for line in sys.stdin:
+    f = line.strip()
+    if not f: continue
+    try:
+        py_compile.compile(f, doraise=True)
+    except py_compile.PyCompileError as e:
+        errors.append(str(e))
+if errors:
+    print('\n'.join(errors))
+    sys.exit(1)
+" 2>&1)
+    if [ $? -ne 0 ]; then
+        is_syntax_error=true
         current_syntax_error="$syntax_output"
         return
     fi
@@ -348,11 +377,8 @@ run_tests() {
             fi
         done
         if [ "$method_still_failing" = false ]; then
-            # Remove breakpoints from the test file
-            # Note: grep -v returns exit code 1 when no lines are output (all filtered),
-            # so we use || true to ensure mv always runs
-            { grep -v "debug_this_test.py" "$PUDB_BP_FILE" || true; } > "${PUDB_BP_FILE}.tmp" 2>/dev/null
-            mv "${PUDB_BP_FILE}.tmp" "$PUDB_BP_FILE"
+            # Test passed — clear all saved breakpoints (test file + user code)
+            : > "$PUDB_BP_FILE"
             last_debugged_method=""
         fi
     fi
@@ -438,7 +464,10 @@ draw_screen() {
     if [ -n "$CUSTOM_TEST_DIR" ]; then
         mode_info+="  ${yellow}[-t $CUSTOM_TEST_DIR]${reset}"
     fi
-    echo "${dim}  [d] PUDB  [p] PDB++  [q] Quit  |  -s stop@fail  -f failed-only  -n no-refresh  -t <dir>${mode_info}${reset}"
+    if [ "$TEST_TIMEOUT" != "2" ]; then
+        mode_info+="  ${yellow}[-T ${TEST_TIMEOUT}s]${reset}"
+    fi
+    echo "${dim}  [d] PUDB  [p] PDB++  [q] Quit  |  -s stop@fail  -f failed-only  -n no-refresh  -t <dir>  -T <sec>${mode_info}${reset}"
 }
 
 # --- 6. MAIN LOOP ---

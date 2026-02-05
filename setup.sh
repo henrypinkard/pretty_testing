@@ -61,6 +61,7 @@ chmod +x "$KIT_ROOT/dbg"
 chmod +x "$KIT_ROOT/bp"
 chmod +x "$KIT_ROOT/skip"
 chmod +x "$KIT_ROOT/debug"
+chmod +x "$KIT_ROOT/untrace"
 
 # 5. Detect which shell config file to use (Zsh vs Bash)
 if [ -f "$HOME/.zshrc" ]; then
@@ -115,6 +116,10 @@ if ! grep -q "alias debug=" "$SHELL_CONFIG"; then
     echo "alias debug='$KIT_ROOT/debug'" >> "$SHELL_CONFIG"
 fi
 
+if ! grep -q "alias untrace=" "$SHELL_CONFIG"; then
+    echo "alias untrace='$KIT_ROOT/untrace'" >> "$SHELL_CONFIG"
+fi
+
 # 7. Also set them for the CURRENT session so they work right now
 alias t="$KIT_ROOT/t"
 alias w="$KIT_ROOT/w"
@@ -125,6 +130,7 @@ alias dbg="$KIT_ROOT/dbg"
 alias bp="$KIT_ROOT/bp"
 alias skip="$KIT_ROOT/skip"
 alias debug="$KIT_ROOT/debug"
+alias untrace="$KIT_ROOT/untrace"
 
 echo "Debug Kit Loaded!"
 echo "Run 'w' to watch"
