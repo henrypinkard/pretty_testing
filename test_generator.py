@@ -286,11 +286,11 @@ if __name__ == '__main__':
                         print(f"{{_c_dim}}Traceback (from test to error):{{_c_reset}}")
                         for i, f in enumerate(relevant_frames):
                             filename = os.path.basename(f.filename)
-                            indent = "  " * i
+                            indent = "    " * i  # 4 spaces per level
                             # Colorized frame header
                             print(f"{{indent}}{{_c_blue}}{{filename}}{{_c_reset}}:{{_c_green}}{{f.lineno}}{{_c_reset}} in {{_c_yellow}}{{f.name}}{{_c_reset}}")
                             if f.line:
-                                code_indent = "  " * (i + 1)
+                                code_indent = "    " * i + "  "  # same level + 2 for code
                                 highlighted = _highlight_code(f.line)
                                 print(f"{{code_indent}}{{highlighted}}")
                         print()  # blank line before error
