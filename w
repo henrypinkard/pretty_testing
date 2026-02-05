@@ -406,7 +406,7 @@ draw_screen() {
     if [ -n "$CUSTOM_TEST_DIR" ]; then
         mode_info+="  ${yellow}[-t $CUSTOM_TEST_DIR]${reset}"
     fi
-    echo "${dim}  [d] debug (pudb)  [p] debug (pdb++)  [q] quit  |  -s -n -f -t DIR${mode_info}${reset}"
+    echo "${dim}  [d] PUDB  [p] PDB++  [q] Quit  |  -s stop@fail  -n no-refresh  -f failed-only  -t <dir>${mode_info}${reset}"
 }
 
 # --- 6. MAIN LOOP ---
@@ -484,7 +484,7 @@ launch_debugger() {
     fi
 
     printf '\033[2J\033[3J\033[H'
-    python3 _pretty_testing_/debug_this_test.py
+    PRETTY_TESTING_DEBUG=1 python3 _pretty_testing_/debug_this_test.py
 
     run_tests
     draw_screen

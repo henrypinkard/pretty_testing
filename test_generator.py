@@ -127,6 +127,9 @@ if __name__ == '__main__':
             line = linecache.getline(filename, lineno).strip()
         except:
             line = "???"
+        # Skip debugger setup lines
+        if any(x in line for x in ['pudb', 'pdb', '_dbg', 'set_break', 'set_trace', '_es=', '.error_summary']):
+            return audit_trace
         print(f"[EXE] {{line}}")
         return audit_trace
 
@@ -198,7 +201,8 @@ if __name__ == '__main__':
         _expecting_failure = getattr(_method_func, '__unittest_expecting_failure__', False)
 
         try:
-            if single_method:
+            _debug_mode = os.environ.get('PRETTY_TESTING_DEBUG') == '1'
+            if single_method and not _debug_mode:
                 print("___TEST_START___")
                 sys.settrace(audit_trace)
 
