@@ -7,6 +7,9 @@ count=0
 
 while IFS= read -r f; do
     [ -f "$f" ] || continue
+    # Skip the trace decorator definition itself (trace.py, _trace.py, etc.)
+    base=$(basename "$f")
+    case "$base" in _*trace.py|trace.py) continue ;; esac
     if grep -qE '^\s*@trace\b' "$f"; then
         matches=$(grep -cE '^\s*@trace\b' "$f")
         # Use grep -v to filter out @trace lines (portable across macOS/Linux)

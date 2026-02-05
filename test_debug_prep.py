@@ -1047,6 +1047,20 @@ class TestUntraceScript(unittest.TestCase):
         self._run_untrace(path)
         self.assertEqual(self._read_file(path), 'result = trace(func)\ndef foo():\n    pass\n')
 
+    def test_skips_trace_py_itself(self):
+        """Should not modify trace.py (the decorator definition file)."""
+        content = '@trace\ndef trace(func):\n    pass\n'
+        path = self._write_file('trace.py', content)
+        self._run_untrace(self.tmpdir)
+        self.assertEqual(self._read_file(path), content)
+
+    def test_skips_underscore_trace_py(self):
+        """Should not modify _trace.py (collision-renamed decorator file)."""
+        content = '@trace\ndef trace(func):\n    pass\n'
+        path = self._write_file('_trace.py', content)
+        self._run_untrace(self.tmpdir)
+        self.assertEqual(self._read_file(path), content)
+
 
 class TestBreakpointClearing(unittest.TestCase):
     """Test that breakpoints are cleared when debugged test passes."""
