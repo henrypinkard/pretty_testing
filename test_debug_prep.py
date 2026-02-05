@@ -898,5 +898,81 @@ class TestSkipScript(unittest.TestCase):
         self.assertIn('test_foo', result.stdout)
 
 
+class TestParseTraceFiltering(unittest.TestCase):
+    """Test output_parser.parse_trace filters out noise from execution log."""
+
+    def _strip_ansi(self, text):
+        """Remove ANSI color codes from text."""
+        import re
+        return re.sub(r'\x1b\[[0-9;]*m', '', text)
+
+    def test_filters_pudb_setup_lines(self):
+        """[EXE] lines containing pudb/pdb setup code should be filtered out."""
+        from output_parser import parse_trace
+        raw_output = """\
+___TEST_START___
+[EXE] import pudb; _dbg = pudb._get_debugger(); _dbg.set_break("/path/to/file.py", 42)
+[EXE] tree = [Token(1, "A")]
+[EXE] result = self.analyzer.flatten_tree(tree)
+FAILED_METHOD: test_foo
+"""
+        result = parse_trace(raw_output)
+        # Split by separator
+        parts = result.split('___SECTION_SEP___')
+        exec_log = self._strip_ansi(parts[2]) if len(parts) > 2 else ""
+        # Should NOT contain the pudb setup line
+        self.assertNotIn('pudb', exec_log)
+        self.assertNotIn('_dbg', exec_log)
+        self.assertNotIn('set_break', exec_log)
+        # Should contain the actual test code
+        self.assertIn('tree = [Token(1, "A")]', exec_log)
+        self.assertIn('result = self.analyzer.flatten_tree(tree)', exec_log)
+
+    def test_filters_pdb_setup_lines(self):
+        """[EXE] lines containing pdb setup code should be filtered out."""
+        from output_parser import parse_trace
+        raw_output = """\
+___TEST_START___
+[EXE] import pdb; pdb.set_trace()
+[EXE] actual_code = True
+"""
+        result = parse_trace(raw_output)
+        parts = result.split('___SECTION_SEP___')
+        exec_log = self._strip_ansi(parts[2]) if len(parts) > 2 else ""
+        self.assertNotIn('pdb', exec_log)
+        self.assertNotIn('set_trace', exec_log)
+        self.assertIn('actual_code = True', exec_log)
+
+    def test_filters_failed_method_lines(self):
+        """FAILED_METHOD: lines should be filtered from execution log."""
+        from output_parser import parse_trace
+        raw_output = """\
+___TEST_START___
+[EXE] x = 1
+FAILED_METHOD: test_foo
+some output
+"""
+        result = parse_trace(raw_output)
+        parts = result.split('___SECTION_SEP___')
+        exec_log = self._strip_ansi(parts[2]) if len(parts) > 2 else ""
+        self.assertNotIn('FAILED_METHOD', exec_log)
+        self.assertIn('x = 1', exec_log)
+
+    def test_preserves_regular_exe_lines(self):
+        """Regular [EXE] lines should be preserved and colorized."""
+        from output_parser import parse_trace
+        raw_output = """\
+___TEST_START___
+[EXE] result = calculate(5)
+[EXE] self.assertEqual(result, 10)
+"""
+        result = parse_trace(raw_output)
+        parts = result.split('___SECTION_SEP___')
+        exec_log = self._strip_ansi(parts[2]) if len(parts) > 2 else ""
+        # Should contain the code
+        self.assertIn('result = calculate(5)', exec_log)
+        self.assertIn('self.assertEqual(result, 10)', exec_log)
+
+
 if __name__ == '__main__':
     unittest.main()

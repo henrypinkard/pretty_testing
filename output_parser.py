@@ -127,10 +127,16 @@ def parse_trace(text):
         if state == 1:
             if clean.startswith('[EXE] '):
                 code = clean.replace('[EXE] ', '')
+                # Skip debugger setup lines (injected pudb/pdb code)
+                if any(x in code for x in ['pudb', 'pdb', '_dbg', 'set_break', 'set_trace']):
+                    continue
                 colored_code = colorize_code(code)
                 buf_log.append(f'  \033[1;34m>>\033[0m {colored_code}\n')
             elif 'Traceback (most recent call last)' in clean:
                 state = 3
+            elif clean.startswith('FAILED_METHOD:'):
+                # Skip FAILED_METHOD lines in execution log
+                continue
             else:
                 buf_log.append(f'  \033[2m{line}\033[0m')
         elif state == 3:
