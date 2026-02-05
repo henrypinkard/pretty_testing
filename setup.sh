@@ -145,3 +145,36 @@ alias lint="$KIT_ROOT/lint"
 
 echo ""
 echo "Static analysis available. Run 'lint' to check code (dependencies installed on first use)."
+
+# =============================================================================
+# TRACE DECORATOR (copy to working directory)
+# =============================================================================
+
+TRACE_WARNING=""
+TRACE_DEST="trace.py"
+
+# Check for collision and find unique name with underscores
+if [ -f "$TRACE_DEST" ]; then
+    # File exists - find a unique name with underscores
+    PREFIX="_"
+    while [ -f "${PREFIX}trace.py" ]; do
+        PREFIX="_${PREFIX}"
+    done
+    TRACE_DEST="${PREFIX}trace.py"
+    TRACE_WARNING="trace.py"
+fi
+
+# Copy trace.py to working directory
+cp "$KIT_ROOT/trace.py" "$TRACE_DEST"
+
+echo ""
+echo "Trace decorator installed: $TRACE_DEST"
+echo "  Usage: from ${TRACE_DEST%.py} import trace"
+
+# Print warning at the very end if there was a collision
+if [ -n "$TRACE_WARNING" ]; then
+    echo ""
+    echo -e "\033[31m⚠ WARNING: '$TRACE_WARNING' already exists in this directory.\033[0m"
+    echo -e "\033[31m  Trace decorator was installed as '$TRACE_DEST' instead.\033[0m"
+    echo -e "\033[31m  Use: from ${TRACE_DEST%.py} import trace\033[0m"
+fi
