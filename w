@@ -67,12 +67,20 @@ user_error_file=""
 user_error_line=0
 # Track previous test results to detect status changes
 declare -A prev_test_status=()  # test_name -> "pass" or "fail"
+declare -A prev_file_has_fail=()  # file_label -> "1" if any test failed
 TEST_STATUS_FILE="_pretty_testing_/.test_status"
+FILE_STATUS_FILE="_pretty_testing_/.file_status"
 # Load previous test status from file if it exists
 if [ -f "$TEST_STATUS_FILE" ]; then
     while IFS='=' read -r name status; do
         [ -n "$name" ] && prev_test_status["$name"]="$status"
     done < "$TEST_STATUS_FILE"
+fi
+# Load previous file status
+if [ -f "$FILE_STATUS_FILE" ]; then
+    while IFS='=' read -r name status; do
+        [ -n "$name" ] && prev_file_has_fail["$name"]="$status"
+    done < "$FILE_STATUS_FILE"
 fi
 PUDB_BP_FILE="${HOME}/.config/pudb/saved-breakpoints-$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 last_debugged_method=""
@@ -85,6 +93,7 @@ run_tests() {
 
     # Track current run's test status (will become prev_test_status after this run)
     declare -A cur_test_status=()
+    declare -A cur_file_has_fail=()  # Track which files have failures this run
 
     # A. SELECT SOURCE
     if [ -n "$CUSTOM_TEST_DIR" ]; then
@@ -132,6 +141,13 @@ run_tests() {
 
     for f in "$test_source_dir"/*.py; do
         [ -f "$f" ] || continue
+        # In failed-only mode, skip files where all tests passed
+        if [ "$FAILED_ONLY" = true ]; then
+            file_label=$(basename "$f" .py)
+            if [ "${prev_file_has_fail[$file_label]}" != "1" ]; then
+                continue
+            fi
+        fi
         python3 _pretty_testing_/make_watch_test.py "$f" > /dev/null 2>&1
     done
 
@@ -207,6 +223,7 @@ run_tests() {
                     file_tests[$file_label]+="  [${red}FAIL${reset}] $test_name"$'\n'
                 fi
                 cur_test_status[$test_name]="fail"
+                cur_file_has_fail[$file_label]="1"
                 has_tests_in_level=true
                 failed_methods+=("$test_name")
                 stop_after_this_file=true
@@ -352,6 +369,21 @@ run_tests() {
     : > "$TEST_STATUS_FILE"  # truncate/create file
     for key in "${!prev_test_status[@]}"; do
         echo "${key}=${prev_test_status[$key]}" >> "$TEST_STATUS_FILE"
+    done
+
+    # Update file-level failure status
+    # Only update files that were actually run this time
+    for key in "${file_order[@]}"; do
+        if [ "${cur_file_has_fail[$key]}" = "1" ]; then
+            prev_file_has_fail[$key]="1"
+        else
+            # File was run and had no failures - clear it
+            unset prev_file_has_fail[$key]
+        fi
+    done
+    : > "$FILE_STATUS_FILE"
+    for key in "${!prev_file_has_fail[@]}"; do
+        echo "${key}=${prev_file_has_fail[$key]}" >> "$FILE_STATUS_FILE"
     done
 }
 
@@ -536,11 +568,11 @@ while true; do
             # Recompute checksum after delay to get final state
             watched_files=$(find . -maxdepth 1 -name "*.py" -type f 2>/dev/null; find "$watch_dir" -name "*.py" -type f 2>/dev/null)
             current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
+            last_checksum="$current_checksum"
             run_tests
             draw_screen
-            # Recompute checksum AFTER run_tests to avoid double-refresh
-            watched_files=$(find . -maxdepth 1 -name "*.py" -type f 2>/dev/null; find "$watch_dir" -name "*.py" -type f 2>/dev/null)
-            current_checksum=$(echo "$watched_files" | sort | xargs md5sum 2>/dev/null | md5sum)
+            # Don't recompute checksum after run_tests - if user edited during
+            # the run, we WANT to detect that change on the next iteration
         fi
         last_checksum="$current_checksum"
     fi
