@@ -155,28 +155,42 @@ def trace(_func=None, *, max_depth=20, show_returns=True, max_len=250, indent="\
         # Track if we've already shown an exception (to avoid repeats)
         exc_shown = [False]
 
+        # Tree-drawing characters, sized to match indent
+        pipe = "│" + indent      # vertical continuation
+        tee  = "├──" + indent    # branch (call)
+        ret  = "└─>" + indent    # return value
+        exc  = "└─✕" + indent    # exception
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             current_depth = depth[0]
-            depth_prefix = f"[{current_depth}] " if show_depth else ""
-            prefix = depth_prefix + indent * current_depth
+            d = current_depth
+            dp = f"[{d}] " if show_depth else ""
 
-            if current_depth < max_depth:
+            # Build prefixes for call, return, and exception lines
+            if d == 0:
+                call_pfx = dp
+            else:
+                call_pfx = dp + pipe * (d - 1) + tee
+            ret_pfx = dp + pipe * d + ret
+            exc_pfx = dp + pipe * d + exc
+
+            if d < max_depth:
                 args_str = _format_args(args, kwargs, max_len, watch)
                 call_str = f"{func.__name__}({args_str})"
                 if '\n' in call_str:
                     # Multi-line args (e.g. 2D numpy arrays):
                     # indent continuation lines to align under the opening paren
-                    pad = prefix + " " * (len(func.__name__) + 1)
+                    pad = call_pfx + " " * (len(func.__name__) + 1)
                     call_str = call_str.replace('\n', '\n' + pad)
-                print(f"{prefix}{call_str}")
-            elif current_depth == max_depth:
-                print(f"{prefix}... (max depth {max_depth} reached)")
+                print(f"{call_pfx}{call_str}")
+            elif d == max_depth:
+                print(f"{call_pfx}... (max depth {max_depth} reached)")
 
             depth[0] += 1
             exc_shown[0] = False  # Reset for this call
 
-            if limit is not None and current_depth >= limit:
+            if limit is not None and d >= limit:
                 depth[0] -= 1
                 raise RecursionError(f"trace limit={limit} exceeded")
 
@@ -184,19 +198,19 @@ def trace(_func=None, *, max_depth=20, show_returns=True, max_len=250, indent="\
                 result = func(*args, **kwargs)
             except Exception as e:
                 depth[0] -= 1
-                if current_depth < max_depth:
+                if d < max_depth:
                     if show_exc or not exc_shown[0]:
-                        print(f"{prefix}└─✕ {type(e).__name__}: {str(e)[:60]}")
+                        print(f"{exc_pfx}{type(e).__name__}: {str(e)[:60]}")
                         exc_shown[0] = True
                     else:
-                        print(f"{prefix}└─✕")
+                        print(f"{dp + pipe * d}└─✕")
                 raise
 
             depth[0] -= 1
 
-            if show_returns and current_depth < max_depth:
+            if show_returns and d < max_depth:
                 result_str = _smart_truncate(result, max_len)
-                print(f"{prefix}└─> {result_str}")
+                print(f"{ret_pfx}{result_str}")
 
             return result
 
