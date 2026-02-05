@@ -37,22 +37,13 @@ ${bold}=== SKIP TESTS ===${reset}
 
 ───────────────────────────────────────────────────
 
-${bold}=== EMERGENCY FALLBACKS ===${reset}
+${bold}=== IF W IS BROKEN ===${reset}
 
-${bold}${yellow}LEVEL 1: w is broken${reset}
     ${bold}dbg tests/foo.py${reset}                  ${dim}# run all tests${reset}
     ${bold}dbg tests/foo.py test_bar${reset}         ${dim}# debug with pudb${reset}
     ${bold}dbg tests/foo.py test_bar pdbpp${reset}   ${dim}# debug with pdb++${reset}
 
-${bold}${red}LEVEL 2: dbg is broken${reset}
-    ${bold}debug tests/foo.py test_bar${reset}       ${dim}# minimal failsafe debugger${reset}
-
-${bold}${red}LEVEL 3: everything is broken${reset}
-    ${bold}python3 ${KIT_ROOT}/test_generator.py tests/foo.py test_bar${reset}
-    ${bold}python3 _pretty_testing_/debug_this_test.py${reset}
-
-${bold}${red}LEVEL 4: nuclear${reset}
-    Add ${bold}import pudb; pudb.set_trace()${reset} in your test, then:
+  ${dim}Nuclear: add${reset} ${bold}import pudb; pudb.set_trace()${reset} ${dim}in your test, then:${reset}
     ${bold}python3 -m unittest tests/foo.py -k test_method${reset}
 
 ${bold}DIAGNOSIS${reset}
