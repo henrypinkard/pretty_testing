@@ -215,6 +215,10 @@ if errors:
     declare -a file_order
     declare -A file_tests
 
+    # Print live progress header (incremental — no full redraws)
+    printf '\033[?25l\033[H\033[2J'
+    printf '\033[K%s\n' "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
+
     for watch_file in $(ls _pretty_testing_/watch_*.py 2>/dev/null | sort -V); do
         file_label=$(basename "$watch_file" .py | sed 's/watch_//')
         file_order+=("$file_label")
@@ -224,51 +228,38 @@ if errors:
         has_tests_in_level=false
         raw_output=""
 
-        # Helper to redraw screen with current state (flicker-free)
-        redraw_progress() {
-            # Hide cursor, move to top, don't clear screen
-            printf '\033[?25l\033[H'
-            # Clear line and print header
-            printf '\033[K%s\n' "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
-            for fl in "${file_order[@]}"; do
-                local ftime="${file_times[$fl]:-...}"
-                printf '\033[K\n'
-                printf '\033[K%s\n' "${bold}File: ${fl}${reset} ${dim}(${ftime})${reset}"
-                # Print each test line, clearing to end of line
-                while IFS= read -r tline; do
-                    [ -n "$tline" ] && printf '\033[K%s\n' "$tline"
-                done <<< "${file_tests[$fl]}"
-            done
-            # Clear any remaining lines from previous output
-            printf '\033[J'
-        }
+        # Print file header for live progress
+        printf '\033[K\n\033[K%s\n' "${bold}File: ${file_label}${reset}"
 
-        # Initial display for this file
-        redraw_progress
-
-        # Stream output line by line for real-time display
+        # Stream output line by line — print each result incrementally
         while IFS= read -r line; do
-            raw_output+="$line"$'\n'
+            # Only collect raw output for crash detection (before first test result)
+            if [ "$has_tests_in_level" = false ]; then
+                raw_output+="$line"$'\n'
+            fi
             if [[ "$line" == "passed:"* ]]; then
-                test_name=$(echo "$line" | cut -d' ' -f2)
+                test_name="${line#passed: }"
                 # Highlight if status changed from fail to pass
                 if [ "${prev_test_status[$test_name]}" = "fail" ]; then
-                    file_tests[$file_label]+="${bold}${green}→ [PASS] $test_name${reset}"$'\n'
+                    tline="${bold}${green}→ [PASS] $test_name${reset}"
                 else
-                    file_tests[$file_label]+="  [${green}PASS${reset}] $test_name"$'\n'
+                    tline="  [${green}PASS${reset}] $test_name"
                 fi
+                file_tests[$file_label]+="$tline"$'\n'
+                printf '\033[K%s\n' "$tline"
                 cur_test_status[$test_name]="pass"
                 has_tests_in_level=true
                 passed_methods+=("$test_name")
-                redraw_progress
             elif [[ "$line" == "FAILED_METHOD:"* ]]; then
-                test_name=$(echo "$line" | cut -d' ' -f2)
+                test_name="${line#FAILED_METHOD: }"
                 # Highlight if status changed from pass to fail
                 if [ "${prev_test_status[$test_name]}" = "pass" ]; then
-                    file_tests[$file_label]+="${bold}${red}→ [FAIL] $test_name${reset}"$'\n'
+                    tline="${bold}${red}→ [FAIL] $test_name${reset}"
                 else
-                    file_tests[$file_label]+="  [${red}FAIL${reset}] $test_name"$'\n'
+                    tline="  [${red}FAIL${reset}] $test_name"
                 fi
+                file_tests[$file_label]+="$tline"$'\n'
+                printf '\033[K%s\n' "$tline"
                 cur_test_status[$test_name]="fail"
                 cur_file_has_fail[$file_label]="1"
                 has_tests_in_level=true
@@ -281,19 +272,20 @@ if errors:
                 if [ -f "$fail_src" ]; then
                     failed_files+=("$(cd "$(dirname "$fail_src")" && pwd)/$(basename "$fail_src")")
                 fi
-                redraw_progress
                 # Default: stop on first failure (unless -a/--all)
                 if [ "$STOP_EARLY" = true ]; then
                     break
                 fi
             elif [[ "$line" == "skipped:"* ]]; then
-                test_name=$(echo "$line" | cut -d' ' -f2)
-                file_tests[$file_label]+="  [${dim}SKIP${reset}] $test_name"$'\n'
+                test_name="${line#skipped: }"
+                tline="  [${dim}SKIP${reset}] $test_name"
+                file_tests[$file_label]+="$tline"$'\n'
+                printf '\033[K%s\n' "$tline"
                 has_tests_in_level=true
-                redraw_progress
             elif [[ "$line" == "NO_TESTS_FOUND_IN_FILE" ]]; then
-                file_tests[$file_label]+="  [${yellow}WARNING${reset}] No methods starting with 'test_' found."$'\n'
-                redraw_progress
+                tline="  [${yellow}WARNING${reset}] No methods starting with 'test_' found."
+                file_tests[$file_label]+="$tline"$'\n'
+                printf '\033[K%s\n' "$tline"
             fi
         done < <(python3 "$watch_file" 2>&1)
 
@@ -302,9 +294,6 @@ if errors:
         file_elapsed=$(echo "$file_end - $file_start" | bc)
         file_elapsed=$(printf "%.1f" "$file_elapsed")
         file_times[$file_label]="${file_elapsed}s"
-
-        # Final redraw with timing
-        redraw_progress
 
         # CRASH DETECTION
         if [ "$has_tests_in_level" = false ]; then
@@ -337,14 +326,14 @@ if errors:
             first_fail_file="$orig_file"
             python3 "$BUILDER" "$orig_file" "$first_fail_method" > /dev/null 2>&1
 
-            # 1. GET FAIL LINE (in test) AND USER ERROR LOCATION (in user code)
-            err_out=$(python3 _pretty_testing_/debug_this_test.py 2>&1)
-            fail_line=$(echo "$err_out" | python3 "$OUTPUT_PARSER" extract-fail-line "debug_this_test.py" "$first_fail_method" 2>/dev/null)
+            # 1. RUN TEST ONCE — reuse output for all analysis
+            test_output=$(python3 _pretty_testing_/debug_this_test.py 2>&1)
+            fail_line=$(echo "$test_output" | python3 "$OUTPUT_PARSER" extract-fail-line "debug_this_test.py" "$first_fail_method" 2>/dev/null)
             if [ -z "$fail_line" ] || [ "$fail_line" = "0" ]; then fail_line=0; fi
             first_fail_line="$fail_line"
 
             # Extract user code error location (file:line where exception originated)
-            user_error_loc=$(echo "$err_out" | python3 "$OUTPUT_PARSER" user-error-loc "_pretty_testing_/debug_this_test.py" 2>/dev/null)
+            user_error_loc=$(echo "$test_output" | python3 "$OUTPUT_PARSER" user-error-loc "_pretty_testing_/debug_this_test.py" 2>/dev/null)
             if [ -n "$user_error_loc" ]; then
                 user_error_file=$(echo "$user_error_loc" | cut -d: -f1)
                 user_error_line=$(echo "$user_error_loc" | cut -d: -f2)
@@ -356,9 +345,8 @@ if errors:
             # 2. EXTRACT SOURCE
             source_and_error=$(python3 "$OUTPUT_PARSER" source _pretty_testing_/debug_this_test.py "$first_fail_method" "$fail_line" 2>/dev/null || echo "(source extraction failed)")
 
-            # 3. RUN AND PARSE EXECUTION LOG + ERROR
-            raw_trace=$(python3 _pretty_testing_/debug_this_test.py 2>&1)
-            parsed_sections=$(echo "$raw_trace" | python3 "$OUTPUT_PARSER" trace 2>/dev/null || echo "___SECTION_SEP___${raw_trace}___SECTION_SEP___")
+            # 3. PARSE EXECUTION LOG + ERROR from same output
+            parsed_sections=$(echo "$test_output" | python3 "$OUTPUT_PARSER" trace 2>/dev/null || echo "___SECTION_SEP___${test_output}___SECTION_SEP___")
             error_msg=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==2')
             exec_log=$(echo "$parsed_sections" | awk 'BEGIN{RS="___SECTION_SEP___"} NR==3')
 

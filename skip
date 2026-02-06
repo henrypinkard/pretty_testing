@@ -23,8 +23,28 @@ case "$1" in
             echo "Test already skipped: $TEST"
             exit 0
         fi
+
+        # Validate: check if test exists in any test file
+        if [ -d "custom_tests" ] && ls custom_tests/*.py >/dev/null 2>&1; then
+            test_dir="custom_tests"
+        elif [ -d "tests" ] && ls tests/*.py >/dev/null 2>&1; then
+            test_dir="tests"
+        else
+            test_dir=""
+        fi
+
+        found=false
+        if [ -n "$test_dir" ]; then
+            if grep -rq "def ${TEST}[( ]" "$test_dir"/*.py 2>/dev/null; then
+                found=true
+            fi
+        fi
+
         echo "$TEST" >> "$SKIP_FILE"
         echo "Skipped test: $TEST"
+        if [ "$found" = false ]; then
+            echo "  Warning: '$TEST' not found in ${test_dir:-test files}. Check the name?"
+        fi
         ;;
     rm)
         if [ $# -lt 2 ]; then

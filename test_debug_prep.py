@@ -774,6 +774,90 @@ class TestManualSkipIntegration(unittest.TestCase):
 
         self.assertEqual(skipped, {'test_foo', 'test_bar'})
 
+    def _write_test_file(self, content):
+        path = os.path.join('tests', 'test_skip_check.py')
+        with open(path, 'w') as f:
+            f.write(textwrap.dedent(content))
+        return path
+
+    def _generate_and_run(self, test_file):
+        import subprocess
+        generator = os.path.join(os.path.dirname(__file__), 'test_generator.py')
+        subprocess.run([sys.executable, generator, test_file],
+                       capture_output=True, cwd=self.tmpdir)
+        gen_file = os.path.join('_pretty_testing_', 'debug_this_test_test_skip_check.py')
+        result = subprocess.run(
+            [sys.executable, gen_file],
+            capture_output=True, text=True, timeout=10, cwd=self.tmpdir,
+        )
+        return result
+
+    def test_skipped_test_does_not_run(self):
+        """A manually skipped test should print 'skipped:' and not execute."""
+        test_file = self._write_test_file("""\
+            import unittest
+            class TestSkipCheck(unittest.TestCase):
+                def test_should_run(self):
+                    self.assertTrue(True)
+                def test_should_skip(self):
+                    self.assertTrue(True)
+        """)
+        skip_path = os.path.join('_pretty_testing_', '.manual_skip')
+        with open(skip_path, 'w') as f:
+            f.write('test_should_skip\n')
+
+        result = self._generate_and_run(test_file)
+        # Skipped test should show as skipped, not passed or failed
+        self.assertIn('skipped: test_should_skip', result.stdout)
+        self.assertNotIn('passed: test_should_skip', result.stdout)
+        self.assertNotIn('FAILED_METHOD: test_should_skip', result.stdout)
+        # The other test should still run
+        self.assertIn('passed: test_should_run', result.stdout)
+
+    def test_skipped_test_body_not_executed(self):
+        """Verify the body of a skipped test is never executed."""
+        test_file = self._write_test_file("""\
+            import unittest
+            class TestSkipExec(unittest.TestCase):
+                def test_skipped(self):
+                    print("THIS_SHOULD_NOT_APPEAR")
+                    self.assertTrue(True)
+                def test_normal(self):
+                    self.assertTrue(True)
+        """)
+        skip_path = os.path.join('_pretty_testing_', '.manual_skip')
+        with open(skip_path, 'w') as f:
+            f.write('test_skipped\n')
+
+        result = self._generate_and_run(test_file)
+        self.assertNotIn('THIS_SHOULD_NOT_APPEAR', result.stdout)
+        self.assertIn('skipped: test_skipped', result.stdout)
+        self.assertIn('passed: test_normal', result.stdout)
+
+    def test_skip_with_run_tests_interaction(self):
+        """Manual skip works even when .run_tests is present (failed-only mode)."""
+        test_file = self._write_test_file("""\
+            import unittest
+            class TestSkipRun(unittest.TestCase):
+                def test_a(self):
+                    self.assertTrue(True)
+                def test_b(self):
+                    self.assertTrue(True)
+        """)
+        # Simulate failed-only mode: .run_tests lists both tests
+        run_path = os.path.join('_pretty_testing_', '.run_tests')
+        with open(run_path, 'w') as f:
+            f.write('test_a\ntest_b\n')
+        # But manually skip test_b
+        skip_path = os.path.join('_pretty_testing_', '.manual_skip')
+        with open(skip_path, 'w') as f:
+            f.write('test_b\n')
+
+        result = self._generate_and_run(test_file)
+        self.assertIn('passed: test_a', result.stdout)
+        self.assertIn('skipped: test_b', result.stdout)
+        self.assertNotIn('passed: test_b', result.stdout)
+
 
 class TestBpScript(unittest.TestCase):
     """Test the bp script for breakpoint management."""
@@ -896,6 +980,29 @@ class TestSkipScript(unittest.TestCase):
         self._run_skip('add', 'test_foo')
         result = self._run_skip('list')
         self.assertIn('test_foo', result.stdout)
+
+    def test_skip_add_warns_on_unknown_test(self):
+        """skip add should warn when test name not found in test files."""
+        # Create a test directory with known tests
+        os.makedirs('tests', exist_ok=True)
+        with open(os.path.join('tests', 'test_example.py'), 'w') as f:
+            f.write('def test_real(self):\n    pass\n')
+
+        result = self._run_skip('add', 'test_nonexistent')
+        # Should still add it (might not exist yet)
+        self.assertIn('Skipped test: test_nonexistent', result.stdout)
+        # But should warn
+        self.assertIn('Warning', result.stdout)
+
+    def test_skip_add_no_warning_for_valid_test(self):
+        """skip add should not warn when test name exists in test files."""
+        os.makedirs('tests', exist_ok=True)
+        with open(os.path.join('tests', 'test_example.py'), 'w') as f:
+            f.write('def test_real(self):\n    pass\n')
+
+        result = self._run_skip('add', 'test_real')
+        self.assertIn('Skipped test: test_real', result.stdout)
+        self.assertNotIn('Warning', result.stdout)
 
 
 class TestParseTraceFiltering(unittest.TestCase):
