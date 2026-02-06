@@ -27,6 +27,7 @@ Examples:
 """
 
 import functools
+import inspect
 
 
 def _smart_truncate(obj, max_len=40):
@@ -122,7 +123,7 @@ def _format_args(args, kwargs, max_len=40, watch=None):
 
 
 def trace(_func=None, *, max_depth=6, show_returns=True, max_len=250, indent="\t",
-          watch=None, show_depth=False, show_exc=True, limit=None):
+          watch=None, show_depth=False, show_exc=True, limit=None, verbose=False):
     """
     Decorator to trace recursive function calls.
 
@@ -155,6 +156,12 @@ def trace(_func=None, *, max_depth=6, show_returns=True, max_len=250, indent="\t
         # Track if we've already shown an exception (to avoid repeats)
         exc_shown = [False]
 
+        # Get parameter names for verbose mode
+        try:
+            param_names = list(inspect.signature(func).parameters.keys())
+        except (ValueError, TypeError):
+            param_names = []
+
         # Tree-drawing characters, sized to match indent
         pipe = "│" + indent      # vertical continuation
         tee  = "├──" + indent    # branch (call)
@@ -174,16 +181,41 @@ def trace(_func=None, *, max_depth=6, show_returns=True, max_len=250, indent="\t
                 call_pfx = dp + pipe * (d - 1) + tee
             ret_pfx = dp + pipe * d + ret
             exc_pfx = dp + pipe * d + exc
+            # Continuation prefix for verbose arg lines
+            cont_pfx = dp + pipe * d
 
             if d < max_depth:
-                args_str = _format_args(args, kwargs, max_len, watch)
-                call_str = f"{func.__name__}({args_str})"
-                if '\n' in call_str:
-                    # Multi-line args (e.g. 2D numpy arrays):
-                    # indent continuation lines to align under the opening paren
-                    pad = call_pfx + " " * (len(func.__name__) + 1)
-                    call_str = call_str.replace('\n', '\n' + pad)
-                print(f"{call_pfx}{call_str}")
+                if verbose:
+                    # Print function name, then each arg on its own line
+                    print(f"{call_pfx}{func.__name__}(")
+                    # Figure out which args to skip (self detection)
+                    start_idx = 0
+                    if len(args) > 0:
+                        first = args[0]
+                        if hasattr(first, '__dict__') and not isinstance(first, type):
+                            start_idx = 1
+                    for i, a in enumerate(args):
+                        if i < start_idx:
+                            continue
+                        watch_idx = i - start_idx
+                        if watch is not None and watch_idx not in watch:
+                            continue
+                        name = param_names[i] if i < len(param_names) else f"arg{i}"
+                        val = _smart_truncate(a, max_len)
+                        print(f"{cont_pfx}{indent}{name} = {val}")
+                    for k, v in kwargs.items():
+                        val = _smart_truncate(v, max_len)
+                        print(f"{cont_pfx}{indent}{k} = {val}")
+                    print(f"{cont_pfx})")
+                else:
+                    args_str = _format_args(args, kwargs, max_len, watch)
+                    call_str = f"{func.__name__}({args_str})"
+                    if '\n' in call_str:
+                        # Multi-line args (e.g. 2D numpy arrays):
+                        # indent continuation lines to align under the opening paren
+                        pad = call_pfx + " " * (len(func.__name__) + 1)
+                        call_str = call_str.replace('\n', '\n' + pad)
+                    print(f"{call_pfx}{call_str}")
             elif d == max_depth:
                 print(f"{call_pfx}... (max depth {max_depth} reached)")
 
