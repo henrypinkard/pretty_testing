@@ -3,14 +3,14 @@
 import sys
 sys.setrecursionlimit(30)
 
-from trace import trace
+# _rtrace is auto-injected into builtins via site-packages (no import needed)
 
 # Test 1: Simple list recursion
 print("=" * 60)
 print("TEST 1: List sum (clean output)")
 print("=" * 60)
 
-@trace
+@_rtrace
 def sum_list(lst):
     if not lst:
         return 0
@@ -40,7 +40,7 @@ tree = {
     }
 }
 
-@trace
+@_rtrace
 def tree_sum(node):
     if node is None:
         return 0
@@ -55,7 +55,7 @@ print("=" * 60)
 
 graph = {'A': ['B', 'C'], 'B': ['D'], 'C': ['D'], 'D': []}
 
-@trace
+@_rtrace
 def find_path(graph, start, end, path=None):
     if path is None:
         path = []
@@ -78,7 +78,7 @@ print("\n" + "=" * 60)
 print("TEST 4: Binary search (multiple numeric args)")
 print("=" * 60)
 
-@trace
+@_rtrace
 def binary_search(arr, target, low, high):
     if low > high:
         return -1
@@ -97,7 +97,7 @@ print("\n" + "=" * 60)
 print("TEST 5: Fibonacci (exponential calls)")
 print("=" * 60)
 
-@trace
+@_rtrace
 def fib(n):
     if n <= 1:
         return n

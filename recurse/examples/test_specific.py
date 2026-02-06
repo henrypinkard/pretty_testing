@@ -11,7 +11,7 @@ sys.path.insert(0, '..')
 
 from collections import namedtuple
 import numpy as np
-from trace import trace
+# _rtrace is auto-injected into builtins via site-packages (no import needed)
 
 # Set recursion limit AFTER imports (numpy needs higher limit to load)
 sys.setrecursionlimit(50)
@@ -34,7 +34,7 @@ print("=" * 60)
 print("PATTERN 1: NamedTuple Tree - Sum all values")
 print("=" * 60)
 
-@trace
+@_rtrace
 def tree_sum(node):
     """Sum all values in a NamedTuple tree."""
     if node is None:
@@ -53,7 +53,7 @@ print("\n" + "=" * 60)
 print("PATTERN 2: NamedTuple Tree - Find value")
 print("=" * 60)
 
-@trace
+@_rtrace
 def tree_find(node, target):
     """Find a value in a BST using NamedTuple."""
     if node is None:
@@ -78,7 +78,7 @@ print("\n" + "=" * 60)
 print("PATTERN 3: NamedTuple Tree - Inorder traversal to list")
 print("=" * 60)
 
-@trace
+@_rtrace
 def inorder(node):
     """Return inorder traversal as a list."""
     if node is None:
@@ -102,7 +102,7 @@ class TokenProcessor:
     def __init__(self, tokens):
         self.tokens = tokens
 
-    @trace
+    @_rtrace
     def process(self, idx=0, acc=0):
         """Recursively process tokens, accumulating a score."""
         if idx >= len(self.tokens):
@@ -123,7 +123,7 @@ print("\n" + "=" * 60)
 print("PATTERN 5: Recursive array max (divide & conquer)")
 print("=" * 60)
 
-@trace(max_len=30)
+@_rtrace(max_len=30)
 def recursive_max(arr):
     """Find max by recursively splitting array."""
     if len(arr) == 0:
@@ -147,7 +147,7 @@ print("\n" + "=" * 60)
 print("PATTERN 6: Recursive count in ranges")
 print("=" * 60)
 
-@trace
+@_rtrace
 def count_in_range(arr, lo, hi):
     """Count elements in [lo, hi] range recursively."""
     if len(arr) == 0:
@@ -169,7 +169,7 @@ print("\n" + "=" * 60)
 print("PATTERN 7: Recursive weighted sum (attention-like)")
 print("=" * 60)
 
-@trace(max_len=35)
+@_rtrace(max_len=35)
 def weighted_aggregate(values, weights, idx=0):
     """Recursively compute weighted sum."""
     if idx >= len(values):
@@ -189,7 +189,7 @@ print("\n" + "=" * 60)
 print("PATTERN 8: Recursive array normalization")
 print("=" * 60)
 
-@trace(max_len=40)
+@_rtrace(max_len=40)
 def recursive_normalize(arr, total=None, idx=0, result=None):
     """Normalize array values to sum to 1 (softmax-like)."""
     if result is None:
@@ -215,7 +215,7 @@ print("\n" + "=" * 60)
 print("PATTERN 9: Recursive sequence generation")
 print("=" * 60)
 
-@trace
+@_rtrace
 def generate_sequence(n, seq=None):
     """Generate sequence where each element is sum of previous two."""
     if seq is None:
@@ -236,7 +236,7 @@ print("\n" + "=" * 60)
 print("PATTERN 10: Tree depth calculation")
 print("=" * 60)
 
-@trace
+@_rtrace
 def tree_depth(node):
     """Calculate depth of NamedTuple tree."""
     if node is None:

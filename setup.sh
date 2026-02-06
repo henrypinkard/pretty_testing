@@ -154,42 +154,16 @@ echo ""
 echo "Static analysis available. Run 'lint' to check code (dependencies installed on first use)."
 
 # =============================================================================
-# TRACE DECORATOR (copy to working directory)
+# TRACE DECORATOR (install to site-packages — available everywhere, no import)
 # =============================================================================
 
-TRACE_WARNING=""
-TRACE_DEST="trace.py"
+SITE_PACKAGES=$(python3 -c "import site; print(site.getusersitepackages())")
+mkdir -p "$SITE_PACKAGES"
 
-# Check for collision
-if [ -f "$TRACE_DEST" ]; then
-    # Same content? Skip copy entirely.
-    if python3 -c "import hashlib,sys; h=lambda f:hashlib.md5(open(f,'rb').read()).hexdigest(); sys.exit(0 if h(sys.argv[1])==h(sys.argv[2]) else 1)" "$TRACE_DEST" "$KIT_ROOT/trace.py"; then
-        echo ""
-        echo "Trace decorator already up to date: $TRACE_DEST"
-    else
-        # Different file — find a unique name with underscores
-        PREFIX="_"
-        while [ -f "${PREFIX}trace.py" ]; do
-            PREFIX="_${PREFIX}"
-        done
-        TRACE_DEST="${PREFIX}trace.py"
-        TRACE_WARNING="trace.py"
-        cp "$KIT_ROOT/trace.py" "$TRACE_DEST"
-        echo ""
-        echo "Trace decorator installed: $TRACE_DEST"
-        echo "  Usage: from ${TRACE_DEST%.py} import trace"
-    fi
-else
-    cp "$KIT_ROOT/trace.py" "$TRACE_DEST"
-    echo ""
-    echo "Trace decorator installed: $TRACE_DEST"
-    echo "  Usage: from ${TRACE_DEST%.py} import trace"
-fi
+cp "$KIT_ROOT/_rtrace.py" "$SITE_PACKAGES/_rtrace.py"
+cp "$KIT_ROOT/_rtrace_hook.py" "$SITE_PACKAGES/_rtrace_hook.py"
+echo "import _rtrace_hook" > "$SITE_PACKAGES/_rtrace_hook.pth"
 
-# Print warning at the very end if there was a collision
-if [ -n "$TRACE_WARNING" ]; then
-    echo ""
-    echo -e "\033[31m⚠ WARNING: '$TRACE_WARNING' already exists in this directory.\033[0m"
-    echo -e "\033[31m  Trace decorator was installed as '$TRACE_DEST' instead.\033[0m"
-    echo -e "\033[31m  Use: from ${TRACE_DEST%.py} import trace\033[0m"
-fi
+echo ""
+echo "Trace decorator installed to site-packages."
+echo "  Usage: @_rtrace  (no import needed)"

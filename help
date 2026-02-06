@@ -40,7 +40,8 @@ ${bold}=== SKIP TESTS ===${reset}
 
 ${bold}=== TRACE ===${reset}
 
-  ${bold}untrace${reset}              Remove all @trace decorators (recursive from .)
+  ${dim}@_rtrace available everywhere (no import needed)${reset}
+  ${bold}untrace${reset}              Remove all @_rtrace decorators (recursive from .)
   ${bold}untrace FILE${reset}         Remove from specific file
   ${bold}untrace DIR${reset}          Remove from all .py files in directory
 

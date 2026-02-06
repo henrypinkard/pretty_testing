@@ -2,7 +2,7 @@
 
 ## Context
 
-This directory contains a `trace` decorator (`trace.py`) for debugging recursive functions. The goal is to generate practice problems with intentional bugs so the user can practice:
+This directory uses the `_rtrace` decorator (auto-injected into builtins, no import needed) for debugging recursive functions. The goal is to generate practice problems with intentional bugs so the user can practice:
 1. Identifying the bug type from trace output
 2. Locating the exact line causing the issue
 3. Fixing the bug
@@ -10,9 +10,7 @@ This directory contains a `trace` decorator (`trace.py`) for debugging recursive
 ## The Trace Decorator
 
 ```python
-from trace import trace
-
-@trace
+@_rtrace
 def my_recursive_func(n):
     ...
 ```
@@ -237,10 +235,10 @@ Each practice problem should:
 1. **Provide a buggy function** with exactly one bug from the patterns above
 2. **Include a test case** that reveals the bug
 3. **State expected vs actual behavior**
-4. **Suggest using `@trace` with appropriate options**
+4. **Suggest using `@_rtrace` with appropriate options**
 
 The user should:
-1. Add `@trace` decorator
+1. Add `@_rtrace` decorator
 2. Run the test case
 3. Identify the bug from the trace output
 4. Fix the bug
