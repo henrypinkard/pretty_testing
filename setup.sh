@@ -167,3 +167,28 @@ echo "import traceit_hook" > "$SITE_PACKAGES/traceit_hook.pth"
 echo ""
 echo "Trace decorator installed to site-packages."
 echo "  Usage: @traceit_  (no import needed)"
+
+# Copy trace.py to current working directory for IDE autocompletion
+# (from trace import trace) — only if not already there with same content
+TRACE_SRC="$KIT_ROOT/trace.py"
+TRACE_DEST="./trace.py"
+if [ -f "$TRACE_DEST" ]; then
+    src_hash=$(shasum "$TRACE_SRC" 2>/dev/null | cut -d' ' -f1)
+    dest_hash=$(shasum "$TRACE_DEST" 2>/dev/null | cut -d' ' -f1)
+    if [ "$src_hash" = "$dest_hash" ]; then
+        echo "  trace.py already up to date in current directory."
+    else
+        # Different trace.py exists — find a name with underscores
+        name="trace_"
+        while [ -f "./${name}.py" ]; do
+            name="${name}_"
+        done
+        cp "$TRACE_SRC" "./${name}.py"
+        echo ""
+        echo "  ${yellow:-}WARNING: trace.py already exists in current directory (different file).${reset:-}"
+        echo "  Installed as ${name}.py instead. Use: from ${name} import trace"
+    fi
+else
+    cp "$TRACE_SRC" "$TRACE_DEST"
+    echo "  Copied trace.py to current directory (from trace import trace)"
+fi
