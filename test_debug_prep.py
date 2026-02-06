@@ -1082,7 +1082,7 @@ ___TEST_START___
 
 
 class TestUntraceScript(unittest.TestCase):
-    """Test the untrace script removes @_rtrace decorators."""
+    """Test the untrace script removes @traceit_ and @trace decorators."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -1110,63 +1110,94 @@ class TestUntraceScript(unittest.TestCase):
             capture_output=True, text=True, cwd=self.tmpdir
         )
 
-    def test_removes_rtrace_no_args(self):
-        """@_rtrace with no parens is removed."""
-        path = self._write_file('foo.py', '@_rtrace\ndef foo():\n    pass\n')
+    def test_removes_traceit_no_args(self):
+        """@traceit_ with no parens is removed."""
+        path = self._write_file('foo.py', '@traceit_\ndef foo():\n    pass\n')
         self._run_untrace(path)
         self.assertEqual(self._read_file(path), 'def foo():\n    pass\n')
 
-    def test_removes_rtrace_empty_parens(self):
-        """@_rtrace() with empty parens is removed."""
-        path = self._write_file('foo.py', '@_rtrace()\ndef foo():\n    pass\n')
+    def test_removes_traceit_empty_parens(self):
+        """@traceit_() with empty parens is removed."""
+        path = self._write_file('foo.py', '@traceit_()\ndef foo():\n    pass\n')
         self._run_untrace(path)
         self.assertEqual(self._read_file(path), 'def foo():\n    pass\n')
 
-    def test_removes_rtrace_with_args(self):
-        """@_rtrace(max_depth=5) with args is removed."""
-        path = self._write_file('foo.py', '    @_rtrace(max_depth=5, watch=[1])\n    def foo(self):\n        pass\n')
+    def test_removes_traceit_with_args(self):
+        """@traceit_(max_depth=5) with args is removed."""
+        path = self._write_file('foo.py', '    @traceit_(max_depth=5, watch=[1])\n    def foo(self):\n        pass\n')
         self._run_untrace(path)
         self.assertEqual(self._read_file(path), '    def foo(self):\n        pass\n')
 
-    def test_preserves_non_rtrace_decorators(self):
+    def test_removes_trace_no_args(self):
+        """@trace with no parens is removed."""
+        path = self._write_file('foo.py', '@trace\ndef foo():\n    pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), 'def foo():\n    pass\n')
+
+    def test_removes_trace_with_args(self):
+        """@trace(max_depth=5) with args is removed."""
+        path = self._write_file('foo.py', '    @trace(max_depth=5)\n    def foo(self):\n        pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), '    def foo(self):\n        pass\n')
+
+    def test_preserves_non_trace_decorators(self):
         """Other decorators are not removed."""
-        path = self._write_file('foo.py', '@other_decorator\n@_rtrace()\ndef foo():\n    pass\n')
+        path = self._write_file('foo.py', '@other_decorator\n@traceit_()\ndef foo():\n    pass\n')
         self._run_untrace(path)
         self.assertEqual(self._read_file(path), '@other_decorator\ndef foo():\n    pass\n')
 
-    def test_no_rtrace_reports_nothing(self):
-        """Files without @_rtrace report nothing found."""
+    def test_does_not_remove_traced_or_tracer(self):
+        """@traced, @tracer etc. should NOT be removed (word boundary)."""
+        path = self._write_file('foo.py', '@traced\n@tracer\ndef foo():\n    pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), '@traced\n@tracer\ndef foo():\n    pass\n')
+
+    def test_no_decorators_reports_nothing(self):
+        """Files without @traceit_ or @trace report nothing found."""
         self._write_file('foo.py', 'def foo():\n    pass\n')
         result = self._run_untrace(os.path.join(self.tmpdir, 'foo.py'))
-        self.assertIn('No @_rtrace decorators found', result.stdout)
+        self.assertIn('No @traceit_ or @trace decorators found', result.stdout)
 
     def test_recursive_directory(self):
-        """Recursively removes @_rtrace from .py files in subdirectories."""
-        self._write_file('sub/a.py', '@_rtrace\ndef a():\n    pass\n')
-        self._write_file('sub/deep/b.py', '@_rtrace()\ndef b():\n    pass\n')
+        """Recursively removes @traceit_ from .py files in subdirectories."""
+        self._write_file('sub/a.py', '@traceit_\ndef a():\n    pass\n')
+        self._write_file('sub/deep/b.py', '@trace()\ndef b():\n    pass\n')
         self._run_untrace(self.tmpdir)
         self.assertEqual(self._read_file(os.path.join(self.tmpdir, 'sub/a.py')), 'def a():\n    pass\n')
         self.assertEqual(self._read_file(os.path.join(self.tmpdir, 'sub/deep/b.py')), 'def b():\n    pass\n')
 
-    def test_does_not_remove_rtrace_in_code(self):
-        """Does not remove lines like '_rtrace(something)' that aren't decorators."""
-        path = self._write_file('foo.py', 'result = _rtrace(func)\ndef foo():\n    pass\n')
+    def test_does_not_remove_traceit_in_code(self):
+        """Does not remove lines like 'traceit_(something)' that aren't decorators."""
+        path = self._write_file('foo.py', 'result = traceit_(func)\ndef foo():\n    pass\n')
         self._run_untrace(path)
-        self.assertEqual(self._read_file(path), 'result = _rtrace(func)\ndef foo():\n    pass\n')
+        self.assertEqual(self._read_file(path), 'result = traceit_(func)\ndef foo():\n    pass\n')
 
-    def test_skips_rtrace_py_itself(self):
-        """Should not modify _rtrace.py (the decorator definition file)."""
-        content = '@_rtrace\ndef _rtrace(func):\n    pass\n'
-        path = self._write_file('_rtrace.py', content)
+    def test_skips_traceit_py_itself(self):
+        """Should not modify traceit_.py (the decorator definition file)."""
+        content = '@traceit_\ndef traceit_(func):\n    pass\n'
+        path = self._write_file('traceit_.py', content)
         self._run_untrace(self.tmpdir)
         self.assertEqual(self._read_file(path), content)
 
-    def test_skips_rtrace_hook_py(self):
-        """Should not modify _rtrace_hook.py (the builtins injection file)."""
-        content = 'import _rtrace\nbuiltins._rtrace = _rtrace._rtrace\n'
-        path = self._write_file('_rtrace_hook.py', content)
+    def test_skips_traceit_hook_py(self):
+        """Should not modify traceit_hook.py (the builtins injection file)."""
+        content = 'import traceit_\nbuiltins.traceit_ = traceit_.traceit_\n'
+        path = self._write_file('traceit_hook.py', content)
         self._run_untrace(self.tmpdir)
         self.assertEqual(self._read_file(path), content)
+
+    def test_skips_trace_py(self):
+        """Should not modify trace.py (the thin wrapper)."""
+        content = 'from traceit_ import traceit_ as trace\n'
+        path = self._write_file('trace.py', content)
+        self._run_untrace(self.tmpdir)
+        self.assertEqual(self._read_file(path), content)
+
+    def test_mixed_traceit_and_trace(self):
+        """Removes both @traceit_ and @trace from the same file."""
+        path = self._write_file('foo.py', '@traceit_\ndef a():\n    pass\n@trace\ndef b():\n    pass\n')
+        self._run_untrace(path)
+        self.assertEqual(self._read_file(path), 'def a():\n    pass\ndef b():\n    pass\n')
 
 
 class TestBreakpointClearing(unittest.TestCase):

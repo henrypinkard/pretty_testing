@@ -12,7 +12,7 @@ print("=" * 60)
 print("BUG: Missing base case (factorial)")
 print("=" * 60)
 
-@_rtrace(max_depth=10)
+@traceit_(max_depth=10)
 def factorial_no_base(n):
     return n * factorial_no_base(n - 1)
 
@@ -28,7 +28,7 @@ print("\n" + "=" * 60)
 print("BUG: Wrong base case (factorial returns 0)")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def factorial_wrong_base(n):
     if n <= 1:
         return 0  # BUG: should be 1
@@ -44,7 +44,7 @@ print("\n" + "=" * 60)
 print("BUG: Not reducing (same index passed)")
 print("=" * 60)
 
-@_rtrace(max_depth=8)
+@traceit_(max_depth=8)
 def find_element_stuck(lst, target, index=0):
     if index >= len(lst):
         return -1
@@ -64,7 +64,7 @@ print("\n" + "=" * 60)
 print("BUG: Forgetting return (returns None)")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def sum_to_n_no_return(n):
     if n <= 0:
         return 0
@@ -83,7 +83,7 @@ print("\n" + "=" * 60)
 print("BUG: Wrong slice (reverses in wrong direction)")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def reverse_wrong(lst):
     if len(lst) <= 1:
         return lst
@@ -99,7 +99,7 @@ print("\n" + "=" * 60)
 print("BUG: Wrong combination (adding instead of max)")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def max_path_sum_wrong(node):
     if node is None:
         return 0
@@ -124,7 +124,7 @@ print("\n" + "=" * 60)
 print("BUG: Accumulator reset on each call")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def sum_list_reset_acc(lst, acc=0):
     if not lst:
         return acc
@@ -142,7 +142,7 @@ print("\n" + "=" * 60)
 print("BUG: Only checks left branch in BST")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def tree_contains_wrong(node, target):
     if node is None:
         return False

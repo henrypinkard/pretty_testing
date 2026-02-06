@@ -1,5 +1,5 @@
 #!/bin/bash
-# Remove @_rtrace decorators from Python files
+# Remove @traceit_ and @trace decorators from Python files
 # Usage: untrace [files/dirs...]   (defaults to all *.py recursively from current dir)
 
 targets=("${@:-.}")
@@ -7,14 +7,14 @@ count=0
 
 while IFS= read -r f; do
     [ -f "$f" ] || continue
-    # Skip the _rtrace decorator definition itself
+    # Skip the decorator definition and hook files
     base=$(basename "$f")
-    case "$base" in _rtrace.py|_rtrace_hook.py) continue ;; esac
-    if grep -qE '^\s*@_rtrace\b' "$f"; then
-        matches=$(grep -cE '^\s*@_rtrace\b' "$f")
-        # Use grep -v to filter out @_rtrace lines (portable across macOS/Linux)
-        grep -vE '^\s*@_rtrace\b' "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
-        echo "  $f: removed $matches @_rtrace line(s)"
+    case "$base" in traceit_.py|traceit_hook.py|trace.py) continue ;; esac
+    if grep -qE '^\s*@trace(it_)?\b' "$f"; then
+        matches=$(grep -cE '^\s*@trace(it_)?\b' "$f")
+        # Use grep -v to filter out @traceit_ and @trace lines (portable across macOS/Linux)
+        grep -vE '^\s*@trace(it_)?\b' "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+        echo "  $f: removed $matches @traceit_/@trace line(s)"
         count=$((count + matches))
     fi
 done < <(
@@ -28,7 +28,7 @@ done < <(
 )
 
 if [ "$count" -eq 0 ]; then
-    echo "No @_rtrace decorators found."
+    echo "No @traceit_ or @trace decorators found."
 else
     echo "Removed $count total."
 fi

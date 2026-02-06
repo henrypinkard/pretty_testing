@@ -216,7 +216,7 @@ if errors:
     declare -A file_tests
 
     # Print live progress header (incremental — no full redraws)
-    printf '\033[?25l\033[H\033[2J'
+    printf '\033[?25l\033[2J\033[3J\033[H'
     printf '\033[K%s\n' "${bold}Last Run: $last_run_time  ${blue}[$display_source]${reset}"
 
     for watch_file in $(ls _pretty_testing_/watch_*.py 2>/dev/null | sort -V); do

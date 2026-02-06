@@ -160,10 +160,10 @@ echo "Static analysis available. Run 'lint' to check code (dependencies installe
 SITE_PACKAGES=$(python3 -c "import site; print(site.getusersitepackages())")
 mkdir -p "$SITE_PACKAGES"
 
-cp "$KIT_ROOT/_rtrace.py" "$SITE_PACKAGES/_rtrace.py"
-cp "$KIT_ROOT/_rtrace_hook.py" "$SITE_PACKAGES/_rtrace_hook.py"
-echo "import _rtrace_hook" > "$SITE_PACKAGES/_rtrace_hook.pth"
+cp "$KIT_ROOT/traceit_.py" "$SITE_PACKAGES/traceit_.py"
+cp "$KIT_ROOT/traceit_hook.py" "$SITE_PACKAGES/traceit_hook.py"
+echo "import traceit_hook" > "$SITE_PACKAGES/traceit_hook.pth"
 
 echo ""
 echo "Trace decorator installed to site-packages."
-echo "  Usage: @_rtrace  (no import needed)"
+echo "  Usage: @traceit_  (no import needed)"

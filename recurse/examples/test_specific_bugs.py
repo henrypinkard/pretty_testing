@@ -30,7 +30,7 @@ print("=" * 60)
 print("BUG 1: Wrong field access (node[0] vs node.value)")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def tree_sum_wrong_access(node):
     """Bug: Using index instead of attribute."""
     if node is None:
@@ -49,7 +49,7 @@ print("\n" + "=" * 60)
 print("BUG 2: BST search only checks left child")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def tree_find_left_only(node, target):
     """Bug: Only recurses left, never right."""
     if node is None:
@@ -69,7 +69,7 @@ print("\n" + "=" * 60)
 print("BUG 3: Inorder with wrong visit order (preorder instead)")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def inorder_wrong_order(node):
     """Bug: Visits node before left (preorder instead of inorder)."""
     if node is None:
@@ -92,7 +92,7 @@ class TokenProcessorBuggy:
     def __init__(self, tokens):
         self.tokens = tokens
 
-    @_rtrace
+    @traceit_
     def process(self, idx=0, acc=0):
         """Bug: Doesn't pass updated accumulator."""
         if idx >= len(self.tokens):
@@ -112,7 +112,7 @@ print("\n" + "=" * 60)
 print("BUG 5: Array recursion - off by one slice")
 print("=" * 60)
 
-@_rtrace(max_depth=10)
+@traceit_(max_depth=10)
 def recursive_sum_offbyone(arr):
     """Bug: Wrong slice causes missing elements."""
     if len(arr) == 0:
@@ -134,7 +134,7 @@ print("\n" + "=" * 60)
 print("BUG 6: Wrong base case for max (returns 0 for empty)")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def recursive_max_wrong_base(arr):
     """Bug: Returns 0 for empty instead of -inf."""
     if len(arr) == 0:
@@ -156,7 +156,7 @@ print("\n" + "=" * 60)
 print("BUG 7: Mutable default argument (list)")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def collect_values_mutable_default(node, result=[]):
     """Bug: Mutable default accumulates across calls."""
     if node is None:
@@ -183,7 +183,7 @@ print("\n" + "=" * 60)
 print("BUG 8: Index not incrementing")
 print("=" * 60)
 
-@_rtrace(max_depth=8)
+@traceit_(max_depth=8)
 def sum_array_stuck(arr, idx=0, total=0):
     """Bug: idx not incremented."""
     if idx >= len(arr):
@@ -207,7 +207,7 @@ class TreeAnalyzer:
     def __init__(self, tree):
         self.tree = tree
 
-    @_rtrace
+    @traceit_
     def count_nodes(self, node=None, first_call=True):
         """Bug: Missing return statement."""
         if first_call:
@@ -233,7 +233,7 @@ print("\n" + "=" * 60)
 print("BUG 10: Using Python len() check wrong with NumPy")
 print("=" * 60)
 
-@_rtrace
+@traceit_
 def find_target_numpy_bug(arr, target, idx=0):
     """Bug: Comparing numpy scalar incorrectly."""
     if idx >= len(arr):
