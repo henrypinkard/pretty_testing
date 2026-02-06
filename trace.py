@@ -123,7 +123,7 @@ def _format_args(args, kwargs, max_len=40, watch=None):
 
 
 def trace(_func=None, *, max_depth=6, show_returns=True, max_len=250, indent="\t",
-          watch=None, show_depth=False, show_exc=True, limit=None, verbose=False):
+          watch=None, show_depth=False, show_exc=True, limit=None, verbose=True):
     """
     Decorator to trace recursive function calls.
 
